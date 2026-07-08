@@ -18,6 +18,38 @@ from .metrics import UtilityParams, utility
 from .simulator import StormSim, TelemetrySample
 
 
+def lyapunov_optimal_c(
+    s:       TelemetrySample,
+    mu:      float,
+    c_max:   int,
+    util_p:  UtilityParams,
+    lam:     float | None = None,
+    V:       float = 1000.0,
+    W:       float = 1.0,
+) -> int:
+    """
+    Drift-plus-penalty optimal server count (eq. 14), by integer search:
+
+      min_c  Lq*(lam - c*mu) + 0.5*(lam - c*mu)^2 - V*u(c) + W*c
+      s.t.   1 <= c <= c_max,  c integer
+
+    Pure function shared by LyapunovController, the compute_lyapunov MCP tool,
+    and the Near-RT-Agent's telemetry snapshot. `lam` defaults to the sample's
+    current arrival rate; a forecast variant may pass a look-ahead estimate.
+    """
+    if lam is None:
+        lam = s.lam_current
+    best_c, best_obj = 1, float("inf")
+    for c in range(1, c_max + 1):
+        drift = s.queue_len * (lam - c * mu) + 0.5 * (lam - c * mu) ** 2
+        probe = TelemetrySample(**{**s.__dict__, "c": c})
+        u     = utility(probe, mu, util_p)
+        obj   = drift - V * u + W * c
+        if obj < best_obj:
+            best_obj, best_c = obj, c
+    return best_c
+
+
 class FixedController:
     def __init__(self, c: int):
         self.c = c
@@ -44,24 +76,15 @@ class LyapunovController:
         if self.util_p is None:
             self.util_p = UtilityParams()
 
-    def _objective(self, sim, s, c, lam):
-        mu = sim.mu_single
-        drift = s.queue_len * (lam - c * mu) + 0.5 * (lam - c * mu) ** 2
-        # utility evaluated as if c were applied (queue/lam from current sample)
-        probe = TelemetrySample(**{**s.__dict__, "c": c})
-        u = utility(probe, mu, self.util_p)
-        return drift - self.V * u + self.W * c
-
     def _lambda_estimate(self, sim, s):
         return s.lam_current
 
     def step(self, sim: StormSim, s: TelemetrySample):
         lam = self._lambda_estimate(sim, s)
-        best_c, best_obj = sim.c, float("inf")
-        for c in range(1, sim.cfg.c_max + 1):
-            obj = self._objective(sim, s, c, lam)
-            if obj < best_obj:
-                best_obj, best_c = obj, c
+        best_c = lyapunov_optimal_c(
+            s, sim.mu_single, sim.cfg.c_max, self.util_p,
+            lam=lam, V=self.V, W=self.W,
+        )
         sim.set_servers(best_c)
 
 
