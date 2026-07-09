@@ -27,7 +27,8 @@ from pydantic_ai import Agent
 from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
-from runtime                    import host as sim_host
+from runtime                    import host as sim_host, UP
+from sim.metrics                import resilience_score
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +67,8 @@ async def run_episode(
     rt_factor:             float   = 1.0,
     poll_interval_s:       float   = 1.0,
     assessment_interval_s: float   = 10.0,
+    t_post:                float | None = None,
+    calendar: list | None = None,
     intents: list[tuple[float, str, str]] | None = None,
 ) -> dict:
     """
@@ -87,8 +90,11 @@ async def run_episode(
     policy  = SharedPolicy()
     stats   = EpisodeStats()
 
+    # Publish the operator calendar so the get_calendar MCP tool can read it
+    sim_host.calendar = calendar or []
+
     # Start simulator
-    msg = sim_host.start(scenario=scenario, seed=seed, c_max=c_max, rt_factor=rt_factor)
+    msg = sim_host.start(scenario=scenario, seed=seed, c_max=c_max, rt_factor=rt_factor, t_post=t_post)
     print(f"[Orchestrator] {msg}")
 
     # Event that signals both loops to stop
@@ -128,6 +134,17 @@ async def run_episode(
     wall_time = time.monotonic() - t_start
     sim_stats = sim_host.sim.stats if sim_host.sim else None
 
+    # Final A3RT resilience score, computed once at episode end (ground truth)
+    final_P = 0.0
+    if sim_host.sim and len(sim_host.sim.telemetry) >= 4:
+        try:
+            final_P = resilience_score(
+                sim_host.sim.telemetry, sim_host.sim.mu_single, UP,
+                t0=sim_host.t0, td=sim_host.td,
+            )["P"]
+        except Exception:
+            final_P = 0.0
+
     return {
         "scenario":            scenario,
         "seed":                seed,
@@ -137,10 +154,12 @@ async def run_episode(
         "non_rt_assessments":  stats.non_rt_assessments,
         "non_rt_errors":       stats.non_rt_errors,
         "intents_routed":      stats.intents_routed,
-        "final_P":             round(policy.last_P, 4),
+        "final_P":             round(final_P, 4),
         "final_policy": {
-            "escalation_threshold": policy.escalation_threshold,
-            "malicious_drop_prob":      policy.malicious_drop_prob,
+            "malicious_drop_prob":  policy.malicious_drop_prob,
+            "queue_hold_threshold": policy.queue_hold_threshold,
+            "lyapunov_V":           policy.lyapunov_V,
+            "lyapunov_W":           policy.lyapunov_W,
         },
         "completed": sim_stats.completed if sim_stats else 0,
         "failed":    sim_stats.failed    if sim_stats else 0,

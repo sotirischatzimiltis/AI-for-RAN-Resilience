@@ -16,11 +16,25 @@ from fastmcp import FastMCP
 
 from sim.metrics import resilience_score
 from runtime import host, UP
+from event_calendar import summarize_calendar
 
 MCP_HOST = "127.0.0.1"
 MCP_PORT = 8000
 
 mcp = FastMCP("StormSim MCP Server")
+
+
+@mcp.tool()
+def get_calendar() -> dict:
+    """Return KNOWN scheduled load events on the operator's calendar near the
+    current sim time (e.g. a stadium egress or planned mass registration).
+
+    Use this to pre-provision BEFORE a known event: if a high-severity event is
+    imminent, raise the Lyapunov utility weight so the fast loop runs more servers
+    ahead of the demand. (This is deterministic schedule info, not a prediction.)
+    """
+    t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0
+    return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)}
 
 
 @mcp.tool()

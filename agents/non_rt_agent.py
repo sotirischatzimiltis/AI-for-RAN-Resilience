@@ -33,23 +33,20 @@ class PolicyUpdate(BaseModel):
     storm_active:         bool  = Field(description="True if a signaling storm is active RIGHT NOW")
     malicious_drop_prob:  float = Field(ge=0.0, le=1.0,
                                         description="Malicious-drop probability to apply while the storm is active (0.0 when not)")
-    escalation_threshold: float = Field(ge=0.0, le=1.0,
-                                        description="Slow tuning knob; only meaningful when tighten=True")
-    queue_hold_threshold:  int   = Field(ge=1, le=1000, default=10,
-                                         description="Queue length below which the fast loop may scale servers "
-                                                     "down; higher holds capacity longer during drain. Applied "
-                                                     "only when tighten=True")
-    lyapunov_V:            float = Field(ge=0.0, le=100000.0, default=1000.0,
-                                         description="Lyapunov utility/performance weight (raw scale, default 1000). "
-                                                     "Higher -> provision MORE servers (favour QoS); raise ahead of a "
-                                                     "forecast storm or scheduled mass event. Applied only when tighten=True")
-    lyapunov_W:            float = Field(ge=0.0, le=1000.0, default=1.0,
-                                         description="Lyapunov server-cost weight (raw scale, default 1). Higher -> "
-                                                     "provision FEWER servers (favour cost). Applied only when tighten=True")
-    tighten:               bool  = Field(description="True only if the slow tuning knobs (escalation_threshold, "
-                                                     "queue_hold_threshold, lyapunov_V, lyapunov_W) should be applied")
-    resilience_P_observed: float = Field(description="Cumulative resilience P read from get_episode_stats")
-    reasoning:             str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
+    queue_hold_threshold: int   = Field(ge=1, le=1000, default=10,
+                                        description="Queue length below which the fast loop may scale servers "
+                                                    "down; higher holds capacity longer during drain. Applied "
+                                                    "only when tighten=True")
+    lyapunov_V:           float = Field(ge=0.0, le=100000.0, default=1000.0,
+                                        description="Lyapunov utility/performance weight (raw scale, default 1000). "
+                                                    "Higher -> provision MORE servers (favour QoS); raise ahead of a "
+                                                    "forecast storm or scheduled mass event. Applied only when tighten=True")
+    lyapunov_W:           float = Field(ge=0.0, le=1000.0, default=1.0,
+                                        description="Lyapunov server-cost weight (raw scale, default 1). Higher -> "
+                                                    "provision FEWER servers (favour cost). Applied only when tighten=True")
+    tighten:              bool  = Field(description="True only if the slow tuning knobs (queue_hold_threshold, "
+                                                    "lyapunov_V, lyapunov_W) should be applied")
+    reasoning:            str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
 
 def build_non_rt_agent(model) -> Agent:
@@ -127,11 +124,13 @@ async def _do_assessment(
 ) -> None:
     t0     = time.monotonic()
     window = summarize_window(sim_host.sim.telemetry) if sim_host.sim else "No sim running."
+
     prompt = (
         f"Assessment #{assessment}. {policy.context_str()}\n"
         f"Recent telemetry window:\n{window}\n"
-        "Call get_episode_stats for the cumulative resilience P, then judge "
-        "storm-vs-noise from the window trends and return a PolicyUpdate."
+        "Call get_episode_stats for the cumulative resilience (P, absorption, adaptation) "
+        "and get_calendar for scheduled load events, then judge storm-vs-noise from the "
+        "window trends and return a PolicyUpdate."
     )
     try:
         result  = await agent.run(prompt)
@@ -140,16 +139,15 @@ async def _do_assessment(
         policy.update(
             storm_active=pu.storm_active,
             malicious_drop_prob=pu.malicious_drop_prob,
-            escalation_threshold=pu.escalation_threshold,
             queue_hold_threshold=pu.queue_hold_threshold,
             lyapunov_V=pu.lyapunov_V,
             lyapunov_W=pu.lyapunov_W,
-            resilience_P=pu.resilience_P_observed,
             tighten=pu.tighten,
         )
+        tuned = f"  tighten(V={pu.lyapunov_V:.0f})" if pu.tighten else ""
         print(
             f"[Non-RT]  assessment={assessment}  storm={pu.storm_active}  "
-            f"drop={pu.malicious_drop_prob:.2f}  P={pu.resilience_P_observed:.3f}  "
+            f"drop={pu.malicious_drop_prob:.2f}{tuned}  "
             f"({elapsed:.1f}s)  {pu.reasoning}"
         )
     except Exception as e:
@@ -168,7 +166,8 @@ async def run_assessment_loop(
     """
     Autonomous Non-RT assessment loop. Sleeps `interval` between assessments,
     wakes early and exits cleanly when stop_event fires, and always runs one
-    final assessment after the episode ends.
+    final assessment after the episode ends. Scheduled events reach the agent via
+    the get_calendar MCP tool (the calendar lives on runtime.host).
     """
     assessment = 0
     while True:

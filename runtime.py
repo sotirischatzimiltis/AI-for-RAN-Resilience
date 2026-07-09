@@ -41,6 +41,7 @@ class SimHost:
         self._done    = threading.Event()
         self.t0: float = 50.0   # storm onset  (single_storm default)
         self.td: float = 110.0  # storm end    (single_storm default)
+        self.calendar: list = []  # scheduled load events (read by the get_calendar MCP tool)
 
     def start(
         self,
