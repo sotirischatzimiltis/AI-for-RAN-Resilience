@@ -39,8 +39,15 @@ class PolicyUpdate(BaseModel):
                                          description="Queue length below which the fast loop may scale servers "
                                                      "down; higher holds capacity longer during drain. Applied "
                                                      "only when tighten=True")
+    lyapunov_V:            float = Field(ge=0.0, le=100000.0, default=1000.0,
+                                         description="Lyapunov utility/performance weight (raw scale, default 1000). "
+                                                     "Higher -> provision MORE servers (favour QoS); raise ahead of a "
+                                                     "forecast storm or scheduled mass event. Applied only when tighten=True")
+    lyapunov_W:            float = Field(ge=0.0, le=1000.0, default=1.0,
+                                         description="Lyapunov server-cost weight (raw scale, default 1). Higher -> "
+                                                     "provision FEWER servers (favour cost). Applied only when tighten=True")
     tighten:               bool  = Field(description="True only if the slow tuning knobs (escalation_threshold, "
-                                                     "queue_hold_threshold) should be applied")
+                                                     "queue_hold_threshold, lyapunov_V, lyapunov_W) should be applied")
     resilience_P_observed: float = Field(description="Cumulative resilience P read from get_episode_stats")
     reasoning:             str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
@@ -135,6 +142,8 @@ async def _do_assessment(
             malicious_drop_prob=pu.malicious_drop_prob,
             escalation_threshold=pu.escalation_threshold,
             queue_hold_threshold=pu.queue_hold_threshold,
+            lyapunov_V=pu.lyapunov_V,
+            lyapunov_W=pu.lyapunov_W,
             resilience_P=pu.resilience_P_observed,
             tighten=pu.tighten,
         )

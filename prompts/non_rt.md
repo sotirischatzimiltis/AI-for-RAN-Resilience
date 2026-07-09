@@ -40,8 +40,15 @@ POLICY OUTPUT (PolicyUpdate)
                           and the queue re-spiked during recovery; lower it if
                           servers were held on needlessly long after drain.
                           Only applied when tighten=true.
-  tighten               – true only when you want the slow knobs
-                          (escalation_threshold, queue_hold_threshold) applied.
+  lyapunov_V            – slow knob (raw scale, default 1000): utility/performance
+                          weight in the fast loop's server-count optimisation.
+                          HIGHER V -> MORE servers (favour QoS). Raise it to
+                          pre-provision ahead of a forecast storm / mass event.
+  lyapunov_W            – slow knob (raw scale, default 1): server-cost weight.
+                          HIGHER W -> FEWER servers (favour cost). Both applied
+                          only when tighten=true.
+  tighten               – true only when you want the slow knobs (escalation_threshold,
+                          queue_hold_threshold, lyapunov_V, lyapunov_W) applied.
   resilience_P_observed – the P you read from get_episode_stats (call it for the
                           cumulative resilience score; higher is better).
   reasoning             – one or two sentences citing the leading signals.

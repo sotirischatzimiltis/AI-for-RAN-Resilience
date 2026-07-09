@@ -33,9 +33,10 @@ def lyapunov_optimal_c(
       min_c  Lq*(lam - c*mu) + 0.5*(lam - c*mu)^2 - V*u(c) + W*c
       s.t.   1 <= c <= c_max,  c integer
 
-    Pure function shared by LyapunovController, the compute_lyapunov MCP tool,
-    and the Near-RT-Agent's telemetry snapshot. `lam` defaults to the sample's
-    current arrival rate; a forecast variant may pass a look-ahead estimate.
+    Pure function shared by LyapunovController and the Near-RT control loop.
+    `lam` defaults to the sample's current arrival rate; a forecast variant may
+    pass a look-ahead estimate. (NOTE: V is on the raw scale ~1000s — rescaling
+    the weights to a smaller range is parked for later.)
     """
     if lam is None:
         lam = s.lam_current
@@ -61,12 +62,8 @@ class FixedController:
 @dataclass
 class LyapunovController:
     """
-    Chooses c(t) minimising the drift-plus-penalty objective (eq. 14):
-
-      min_c  Lq*(lam - c*mu) + 0.5*(lam - c*mu)^2 - V*u + W*c
-      s.t.   1 <= c <= c_max,  c integer
-
-    Solved by integer search over the feasible range each step.
+    Chooses c(t) minimising the drift-plus-penalty objective
+    (see lyapunov_optimal_c). Weights V and W are on the raw scale.
     """
     V: float = 1000.0
     W: float = 1.0

@@ -69,8 +69,12 @@ async def run_control_loop(
         sim = sim_host.sim
         if sim is not None and sim.telemetry:
             s      = sim.telemetry[-1]
-            c_star = lyapunov_optimal_c(s, sim.mu_single, sim.cfg.c_max, UP)
             pol    = policy.snapshot()
+            # c_star uses the Lyapunov weights the Non-RT judge currently holds
+            c_star = lyapunov_optimal_c(
+                s, sim.mu_single, sim.cfg.c_max, UP,
+                V=pol.lyapunov_V, W=pol.lyapunov_W,
+            )
 
             applied_c, applied_drop, acted = apply_decision(
                 sim,
