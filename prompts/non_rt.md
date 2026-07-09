@@ -31,10 +31,17 @@ leading signals to actually turn.
 
 POLICY OUTPUT (PolicyUpdate)
   storm_active          – your verdict for right now.
-  drop_prob_floor       – filter strength while the storm is active (0.0 when not).
+  malicious_drop_prob       – filter strength while the storm is active (0.0 when not).
   escalation_threshold  – slow tuning knob; only change it (tighten=true) if
                           absorption was genuinely poor across the episode.
-  tighten               – true only when you want escalation_threshold applied.
+  queue_hold_threshold  – slow knob (default 10): the queue length below which
+                          the fast loop is allowed to scale servers back down.
+                          Raise it (e.g. 20–50) if capacity was shed too early
+                          and the queue re-spiked during recovery; lower it if
+                          servers were held on needlessly long after drain.
+                          Only applied when tighten=true.
+  tighten               – true only when you want the slow knobs
+                          (escalation_threshold, queue_hold_threshold) applied.
   resilience_P_observed – the P you read from get_episode_stats (call it for the
                           cumulative resilience score; higher is better).
   reasoning             – one or two sentences citing the leading signals.

@@ -23,7 +23,7 @@ Two LLM-adjacent components sit above a deterministic fast loop:
 
  Non-RT-Agent (LLM, ~10 s cadence)  the STORM JUDGE. Reads a telemetry *window*
                                     (trends, not one instant), decides storm-vs-
-                                    noise, and writes storm_active + drop_prob_floor
+                                    noise, and writes storm_active + malicious_drop_prob
                                     into shared policy. Never blocks the fast loop.
 
  Fast control loop (pure code, 1 Hz)  reads telemetry, computes the Lyapunov-optimal
@@ -45,7 +45,7 @@ agents/
 ├── orchestrator.py         starts the episode, launches loops, routes intents
 ├── non_rt_agent.py         LLM storm judge — telemetry-window trends → policy
 ├── near_rt_control_loop.py PURE-CODE 1 Hz loop — c_star + policy → clamp → actuate
-└── policy.py               SharedPolicy: atomic storm_active / drop_prob_floor handoff
+└── policy.py               SharedPolicy: atomic storm_active / malicious_drop_prob handoff
 
 mcp_server/
 └── server.py               hosts the running episode (SimHost) + get_episode_stats
@@ -67,7 +67,7 @@ prompts/
 The simulator exposes two runtime actuators, mapped to the two resilience mechanisms:
 
 - **Adaptation — `set_servers(c)`**: the commanded server count. Driven every tick by the fast loop from the Lyapunov-optimal `c_star`. A guardrail refuses to shed servers while the queue is still draining.
-- **Absorption — `set_malicious_drop_prob(p)`**: fraction of botnet UEs dropped at admission. Gated by the Non-RT judge's `storm_active` verdict (`drop_prob_floor` during a storm, `0.0` otherwise).
+- **Absorption — `set_malicious_drop_prob(p)`**: fraction of botnet UEs dropped at admission. Gated by the Non-RT judge's `storm_active` verdict (`malicious_drop_prob` during a storm, `0.0` otherwise).
 
 Resilience is scored with the A3RT metric **P = 0.4·absorption + 0.4·adaptation + 0.2·trec**.
 
@@ -81,8 +81,8 @@ every 1 s (no LLM):
     c_star  = lyapunov_optimal_c(s, ...)          # Python, in-process
     pol     = policy.snapshot()                   # atomic: storm_active, drop_floor
     action  = (servers = c_star,                  # capacity always reactive
-               drop    = pol.drop_prob_floor if pol.storm_active else 0.0)
-    apply_decision(sim, action, pol.drop_prob_floor)   # clamp + actuate
+               drop    = pol.malicious_drop_prob if pol.storm_active else 0.0)
+    apply_decision(sim, action, pol.malicious_drop_prob)   # clamp + actuate
 ```
 
 ---

@@ -1,64 +1,43 @@
-"""
-Near-RT control loop — PURE CODE, no LLM.
-
-The 1 Hz control loop in the decoupled two-agent design. Each tick it reads
-telemetry, computes the Lyapunov-optimal server count in Python, reads the latest
-policy snapshot written by the Non-RT-Agent, and applies a clamped action.
-
-Capacity (servers) adapts REACTIVELY every tick; only the absorption lever
-(drop_prob) is gated on the Non-RT judge's storm_active verdict. No pydantic
-models, no Agent, no MCP round-trip on the tick.
-"""
-
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 
-from mcp_server.server import UP, host as sim_host
+from runtime import UP, host as sim_host
 from sim.controllers import lyapunov_optimal_c
 from agents.policy import SharedPolicy, EpisodeStats
 
-# guardrail constant: don't shed servers while the queue is still this backed up
-_QUEUE_HOLD_THRESHOLD = 10
 
-
-@dataclass
-class _FastAction:
-    """Code-assembled action for a single fast-loop tick."""
-    storm_active:       bool
-    proposed_servers:   int
-    proposed_drop_prob: float
-
-
-def apply_decision(sim, action: _FastAction, drop_prob_floor: float) -> tuple[int, float, bool]:
+def apply_decision(
+    sim,
+    storm_active:         bool,
+    proposed_servers:     int,
+    malicious_drop_prob:      float,
+    queue_hold_threshold: int = 10,
+) -> tuple[int, float, bool]:
     """
-    Clamp an action against the safety rules, apply it to the sim, and return
-    (applied_servers, applied_drop_prob, acted).
-
+    Clamp the proposed servers + policy-gated drop against the safety rules, apply
+    them to the sim, and return (applied_servers, applied_drop, acted).
     Server rule : clamp to [1, c_max]; never scale BELOW the current count while
-                  the queue is still backed up (queue_len >= _QUEUE_HOLD_THRESHOLD).
+                  the queue is still backed up (queue_len >= queue_hold_threshold).
                   Capacity is otherwise reactive — it follows the proposal (c_star).
-    Drop rule   : during a storm, enforce at least drop_prob_floor; otherwise
-                  force 0.0 (the malicious filter has no purpose off-storm).
+                  queue_hold_threshold is a policy knob the Non-RT judge may tune
+                  between storms/episodes.
+    Drop rule   : apply malicious_drop_prob during a storm, else 0.0 (the malicious
+                  filter has no purpose off-storm).
     """
     current_c    = sim.c
     current_drop = sim.malicious_drop_prob
     queue_len    = sim.telemetry[-1].queue_len if sim.telemetry else 0
 
     # --- adaptation lever: servers (reactive) ---
-    proposed_c = max(1, min(int(action.proposed_servers), sim.cfg.c_max))
-    if proposed_c < current_c and queue_len >= _QUEUE_HOLD_THRESHOLD:
+    proposed_c = max(1, min(int(proposed_servers), sim.cfg.c_max))
+    if proposed_c < current_c and queue_len >= queue_hold_threshold:
         applied_c = current_c            # hold: don't shed capacity mid-drain
     else:
         applied_c = proposed_c
 
     # --- absorption lever: drop probability (policy-gated) ---
-    if action.storm_active:
-        applied_drop = max(action.proposed_drop_prob, drop_prob_floor)
-    else:
-        applied_drop = 0.0
-    applied_drop = max(0.0, min(1.0, applied_drop))
+    applied_drop = malicious_drop_prob if storm_active else 0.0
 
     acted = (applied_c != current_c) or (abs(applied_drop - current_drop) > 1e-9)
     sim.set_servers(applied_c)
@@ -73,12 +52,11 @@ async def run_control_loop(
     stats:         EpisodeStats | None = None,
 ) -> None:
     """
-    Deterministic 1 Hz control loop — no LLM on the tick.
-
+    Deterministic 1 Hz control loop
     Each tick:
       1. read latest telemetry from the sim,
       2. compute c_star (Lyapunov drift-plus-penalty) in Python,
-      3. read the atomic policy snapshot (storm_active, drop_prob_floor),
+      3. read the atomic policy snapshot (storm_active, malicious_drop_prob),
       4. apply a clamped action (capacity reactive; drop gated by storm_active),
       5. sleep to the next tick (waking early when the episode ends).
     """
@@ -94,12 +72,13 @@ async def run_control_loop(
             c_star = lyapunov_optimal_c(s, sim.mu_single, sim.cfg.c_max, UP)
             pol    = policy.snapshot()
 
-            action = _FastAction(
-                storm_active=pol.storm_active,
-                proposed_servers=c_star,           # capacity always reactive
-                proposed_drop_prob=pol.drop_prob_floor,
+            applied_c, applied_drop, acted = apply_decision(
+                sim,
+                pol.storm_active,
+                c_star,                    # capacity always reactive
+                pol.malicious_drop_prob,
+                pol.queue_hold_threshold,
             )
-            applied_c, applied_drop, acted = apply_decision(sim, action, pol.drop_prob_floor)
 
             marker = "✦" if acted else "·"
             print(

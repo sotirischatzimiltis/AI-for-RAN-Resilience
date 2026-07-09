@@ -4,7 +4,7 @@ Non-RT-Agent — the storm judge in the decoupled (two-agent) design.
 Runs asynchronously on its own cadence (a few seconds), ABOVE the deterministic
 1 Hz fast control loop, which it never blocks. Each assessment it is fed a
 summary of the recent telemetry WINDOW (trends, not one instant), judges whether
-a signaling storm is active, and writes storm_active + drop_prob_floor into the
+a signaling storm is active, and writes storm_active + malicious_drop_prob into the
 shared policy. The fast loop reads that verdict to gate the malicious-UE filter;
 capacity is handled reactively by the fast loop without waiting on this agent.
 """
@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPToolset, FastMCPClient
 
-from mcp_server.server import MCP_HOST, MCP_PORT, host as sim_host
+from mcp_server.server import MCP_HOST, MCP_PORT
+from runtime import host as sim_host
 from agents.policy import SharedPolicy, EpisodeStats
 
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
@@ -29,12 +30,17 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
 
 
 class PolicyUpdate(BaseModel):
-    storm_active:          bool  = Field(description="True if a signaling storm is active RIGHT NOW")
-    drop_prob_floor:       float = Field(ge=0.0, le=1.0,
-                                         description="Malicious-drop probability to apply while the storm is active (0.0 when not)")
-    escalation_threshold:  float = Field(ge=0.0, le=1.0,
-                                         description="Slow tuning knob; only meaningful when tighten=True")
-    tighten:               bool  = Field(description="True only if escalation_threshold should be applied")
+    storm_active:         bool  = Field(description="True if a signaling storm is active RIGHT NOW")
+    malicious_drop_prob:  float = Field(ge=0.0, le=1.0,
+                                        description="Malicious-drop probability to apply while the storm is active (0.0 when not)")
+    escalation_threshold: float = Field(ge=0.0, le=1.0,
+                                        description="Slow tuning knob; only meaningful when tighten=True")
+    queue_hold_threshold:  int   = Field(ge=1, le=1000, default=10,
+                                         description="Queue length below which the fast loop may scale servers "
+                                                     "down; higher holds capacity longer during drain. Applied "
+                                                     "only when tighten=True")
+    tighten:               bool  = Field(description="True only if the slow tuning knobs (escalation_threshold, "
+                                                     "queue_hold_threshold) should be applied")
     resilience_P_observed: float = Field(description="Cumulative resilience P read from get_episode_stats")
     reasoning:             str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
@@ -126,14 +132,15 @@ async def _do_assessment(
         elapsed = time.monotonic() - t0
         policy.update(
             storm_active=pu.storm_active,
-            drop_prob_floor=pu.drop_prob_floor,
+            malicious_drop_prob=pu.malicious_drop_prob,
             escalation_threshold=pu.escalation_threshold,
+            queue_hold_threshold=pu.queue_hold_threshold,
             resilience_P=pu.resilience_P_observed,
             tighten=pu.tighten,
         )
         print(
             f"[Non-RT]  assessment={assessment}  storm={pu.storm_active}  "
-            f"drop_floor={pu.drop_prob_floor:.2f}  P={pu.resilience_P_observed:.3f}  "
+            f"drop={pu.malicious_drop_prob:.2f}  P={pu.resilience_P_observed:.3f}  "
             f"({elapsed:.1f}s)  {pu.reasoning}"
         )
     except Exception as e:

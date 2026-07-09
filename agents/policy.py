@@ -16,8 +16,9 @@ from dataclasses import dataclass, field
 class PolicyView:
     """Immutable, atomic snapshot of policy state for the fast loop to read."""
     escalation_threshold: float
-    drop_prob_floor:      float
+    malicious_drop_prob:      float
     storm_active:         bool
+    queue_hold_threshold: int
     last_P:               float
     last_updated:         float
 
@@ -29,12 +30,16 @@ class SharedPolicy:
 
     storm_active         — the Non-RT judge's current storm-vs-noise verdict.
                            Gates the absorption lever (drop_prob) in the fast loop.
-    drop_prob_floor      — drop probability to apply while a storm is active.
+    malicious_drop_prob      — drop probability to apply while a storm is active.
     escalation_threshold — longer-horizon tuning knob (queue/(c*mu) sensitivity).
+    queue_hold_threshold — the fast loop refuses to scale servers DOWN while
+                           queue_len is at/above this. Higher = hold capacity
+                           longer during drain; lower = scale down sooner.
     """
     escalation_threshold: float = 0.6
-    drop_prob_floor:      float = 0.0
+    malicious_drop_prob:      float = 0.0
     storm_active:         bool  = False
+    queue_hold_threshold: int   = 10
 
     last_P:       float = field(default=0.0, repr=False)
     last_updated: float = field(default=0.0, repr=False)
@@ -46,23 +51,28 @@ class SharedPolicy:
         self,
         *,
         storm_active:         bool,
-        drop_prob_floor:      float,
+        malicious_drop_prob:      float,
         resilience_P:         float,
         escalation_threshold: float | None = None,
+        queue_hold_threshold: int | None = None,
         tighten:              bool = False,
     ) -> None:
         """
         Write a new policy atomically.
 
-        storm_active and drop_prob_floor are the operational levers and are always
-        written. escalation_threshold is the slow tuning knob and only moves when
-        `tighten` is set (avoids oscillating the long-horizon threshold).
+        storm_active and malicious_drop_prob are the operational levers and are always
+        written. escalation_threshold and queue_hold_threshold are slow tuning
+        knobs and only move when `tighten` is set (avoids the fast loop's behaviour
+        changing on every assessment).
         """
         with self._lock:
             self.storm_active    = storm_active
-            self.drop_prob_floor = drop_prob_floor
-            if tighten and escalation_threshold is not None:
-                self.escalation_threshold = escalation_threshold
+            self.malicious_drop_prob = malicious_drop_prob
+            if tighten:
+                if escalation_threshold is not None:
+                    self.escalation_threshold = escalation_threshold
+                if queue_hold_threshold is not None:
+                    self.queue_hold_threshold = max(1, int(queue_hold_threshold))
             self.last_P       = resilience_P
             self.last_updated = time.monotonic()
 
@@ -71,8 +81,9 @@ class SharedPolicy:
         with self._lock:
             return PolicyView(
                 escalation_threshold=self.escalation_threshold,
-                drop_prob_floor=self.drop_prob_floor,
+                malicious_drop_prob=self.malicious_drop_prob,
                 storm_active=self.storm_active,
+                queue_hold_threshold=self.queue_hold_threshold,
                 last_P=self.last_P,
                 last_updated=self.last_updated,
             )
@@ -86,7 +97,8 @@ class SharedPolicy:
             return (
                 f"Policy: storm_active={self.storm_active}, "
                 f"escalation_threshold={self.escalation_threshold:.2f}, "
-                f"drop_prob_floor={self.drop_prob_floor:.2f}{age_str}."
+                f"malicious_drop_prob={self.malicious_drop_prob:.2f}, "
+                f"queue_hold_threshold={self.queue_hold_threshold}{age_str}."
             )
 
 

@@ -27,7 +27,7 @@ from pydantic_ai import Agent
 from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
-from mcp_server.server          import host as sim_host
+from runtime                    import host as sim_host
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ async def run_episode(
         "final_P":             round(policy.last_P, 4),
         "final_policy": {
             "escalation_threshold": policy.escalation_threshold,
-            "drop_prob_floor":      policy.drop_prob_floor,
+            "malicious_drop_prob":      policy.malicious_drop_prob,
         },
         "completed": sim_stats.completed if sim_stats else 0,
         "failed":    sim_stats.failed    if sim_stats else 0,
