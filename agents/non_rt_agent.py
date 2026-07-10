@@ -24,7 +24,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from pydantic_ai.mcp import MCPToolset, FastMCPClient
+from pydantic_ai.mcp import MCPServerStreamableHTTP
 
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
@@ -57,7 +57,7 @@ class PolicyUpdate(BaseModel):
 
 
 def build_non_rt_agent(model) -> Agent:
-    toolset = MCPToolset(FastMCPClient(MCP_URL))
+    toolset = MCPServerStreamableHTTP(MCP_URL)
     return Agent(
         model=model,
         output_type=PolicyUpdate,
