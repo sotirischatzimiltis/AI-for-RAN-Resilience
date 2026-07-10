@@ -51,8 +51,11 @@ STORM JUDGMENT — the decisive rule
       draining — queue LAGS)            → TAIL   : storm_active=false, drop=0.0
     lam at baseline, no recent peak     → BENIGN : storm_active=false, drop=0.0
 
-  Be steady: only declare the storm over once lam_current has actually returned to
-  near baseline, not on a single ambiguous window.
+  Be steady: only declare the storm over once the LATEST lam has ACTUALLY returned
+  to near baseline, not on a single ambiguous window. A forecast PREDICTING a fall
+  is NOT sufficient to stand down while the latest lam is still high — keep the
+  filter engaged until the drop has actually happened. (Use a falling forecast to
+  anticipate, not to disengage early.)
 
 PRE-PROVISIONING — two INDEPENDENT triggers, same action
   Get ahead of demand by raising lyapunov_V (e.g. to ~5000) with tighten=true so
