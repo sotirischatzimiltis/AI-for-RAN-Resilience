@@ -123,8 +123,9 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
 
     return (
         f"Window: last {t1 - t0:.0f}s ({len(win)} samples), now t={t_now:.0f}s\n"
-        f"  arrival-rate lam: {lam0:.0f} -> {lam1:.0f} UEs/s ({lam_dir}); "
-        f"peak {peak.lam_current:.0f} at t={peak.t:.0f}s ({since_peak:.0f}s ago)  [LEADING]\n"
+        f"  >>> LATEST lam = {lam1:.0f} UEs/s  (this is NOW; your storm verdict keys on this)\n"
+        f"  arrival-rate lam over window: {lam0:.0f} -> {lam1:.0f} UEs/s ({lam_dir}); "
+        f"peak was {peak.lam_current:.0f} at t={peak.t:.0f}s ({since_peak:.0f}s ago, already past)  [LEADING]\n"
         f"  lam trajectory (bin means): {traj}\n"
         f"  queue_len: {q0} -> {q1} ({q_dir})  [LAGGING]\n"
         f"  retry-rate: {rr_first:.0f}/s -> {rr_second:.0f}/s ({rr_dir})  [LEADING]"

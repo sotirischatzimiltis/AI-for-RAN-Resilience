@@ -29,12 +29,19 @@ PROCEDURE — follow exactly, then STOP
   re-poll; make the call with what you have.
 
 STORM JUDGMENT — the decisive rule
-  lam_current (arrival rate) is the PRIMARY signal. Baseline is ~20 UEs/s; a storm
-  drives it toward ~200. If lam_current is well above baseline (say > 3x), a storm
-  IS active — set storm_active=true and malicious_drop_prob≈0.8 — REGARDLESS of the
+  Key your verdict on the LATEST lam (the "LATEST lam =" line = the value RIGHT
+  NOW), NOT the in-window peak. The peak is the storm you have ALREADY been
+  handling; a high peak with the latest lam back at baseline means the storm is
+  OVER, not ongoing. Never report the peak as if it were the current value.
+
+  lam (arrival rate) is the PRIMARY signal. Baseline is ~20 UEs/s; a storm drives
+  it toward ~200. If the LATEST lam is well above baseline (say > 3x), a storm IS
+  active — set storm_active=true and malicious_drop_prob≈0.8 — REGARDLESS of the
   retry-rate. When your filter is working, retries fall to ~0 DURING the storm;
-  flat/zero retries while lam is still high means the filter is doing its job, NOT
-  that the storm ended. Do not be fooled into standing down mid-storm.
+  flat/zero retries while the latest lam is still high means the filter is doing
+  its job, NOT that the storm ended. Do not be fooled into standing down mid-storm.
+  Conversely, once the LATEST lam has fallen back to ~baseline, the storm is over
+  even if the peak was high and the queue is still draining — stand down.
 
   Use the trends to place yourself in the lifecycle:
     lam rising from baseline            → ONSET  : storm_active=true, drop≈0.8
