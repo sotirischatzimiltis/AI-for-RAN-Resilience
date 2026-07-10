@@ -2,11 +2,18 @@
 Non-RT-Agent — the storm judge in the decoupled (two-agent) design.
 
 Runs asynchronously on its own cadence (a few seconds), ABOVE the deterministic
-1 Hz fast control loop, which it never blocks. Each assessment it is fed a
-summary of the recent telemetry WINDOW (trends, not one instant), judges whether
-a signaling storm is active, and writes storm_active + malicious_drop_prob into the
-shared policy. The fast loop reads that verdict to gate the malicious-UE filter;
-capacity is handled reactively by the fast loop without waiting on this agent.
+1 Hz fast control loop, which it never blocks. Each assessment it:
+  • is fed a summary of the recent telemetry WINDOW (trends, not one instant);
+  • READS two MCP tools — get_episode_stats (resilience) and get_calendar
+    (known scheduled load events);
+  • WRITES a PolicyUpdate into shared policy: the operational levers
+    (storm_active, malicious_drop_prob) every cycle, plus the slow tuning knobs
+    (queue_hold_threshold, lyapunov_V, lyapunov_W) when it sets tighten=True —
+    e.g. raising lyapunov_V to pre-provision ahead of a scheduled event.
+
+The fast loop reads that policy to gate the malicious-UE filter and shape its
+Lyapunov server-count optimisation; capacity itself stays reactive and never
+waits on this agent.
 """
 
 from __future__ import annotations
