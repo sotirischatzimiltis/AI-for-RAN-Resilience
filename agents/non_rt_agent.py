@@ -135,9 +135,10 @@ async def _do_assessment(
     prompt = (
         f"Assessment #{assessment}. {policy.context_str()}\n"
         f"Recent telemetry window:\n{window}\n"
-        "Call get_episode_stats for the cumulative resilience (P, absorption, adaptation) "
-        "and get_calendar for scheduled load events, then judge storm-vs-noise from the "
-        "window trends and return a PolicyUpdate."
+        "Call get_episode_stats for the cumulative resilience (P, absorption, adaptation), "
+        "get_calendar for scheduled load events, and get_forecast for the short-term "
+        "prediction of where load is heading. Then judge storm-vs-noise from the window "
+        "trends and return a PolicyUpdate."
     )
     try:
         result  = await agent.run(prompt)

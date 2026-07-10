@@ -17,6 +17,7 @@ from fastmcp import FastMCP
 from sim.metrics import resilience_score
 from runtime import host, UP
 from event_calendar import summarize_calendar
+from forecast import forecast_signals, summarize_forecast
 
 MCP_HOST = "127.0.0.1"
 MCP_PORT = 8000
@@ -35,6 +36,26 @@ def get_calendar() -> dict:
     """
     t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0
     return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)}
+
+
+@mcp.tool()
+def get_forecast() -> dict:
+    """Short-term forecast of where the telemetry is HEADING (next ~20s), from a
+    least-squares fit to recent samples — the data-driven complement to
+    get_calendar's known schedule.
+
+    Projects the leading signals (arrival rate, retry-rate, fail-rate) and the
+    lagging queue forward. Each carries a trend, a per-second slope and a
+    confidence from the fit quality. Use a rising arrival-rate forecast to
+    PRE-PROVISION (raise lyapunov_V, tighten=true) before a storm is confirmed;
+    discount low-confidence projections.
+    """
+    if host.sim is None or len(host.sim.telemetry) < 3:
+        return {"error": "insufficient data — episode may not have started yet"}
+    tel = host.sim.telemetry
+    out = forecast_signals(tel)
+    out["summary"] = summarize_forecast(tel)
+    return out
 
 
 @mcp.tool()

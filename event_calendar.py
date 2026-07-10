@@ -8,8 +8,8 @@ PRE-TUNE policy (e.g. raise lyapunov_V to pre-provision) BEFORE the event hits,
 rather than only reacting to telemetry after it starts.
 
 NOTE: this is deterministic KNOWN schedule information. Short-term *prediction*
-of arrival/retry/fail values (regression on recent telemetry) is a separate,
-future concern — reserved for a `forecast` tool, not this module.
+of arrival/retry/fail values (regression on recent telemetry) is a separate
+concern, handled by forecast.py / the get_forecast tool — not this module.
 """
 
 from __future__ import annotations
