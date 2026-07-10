@@ -6,6 +6,12 @@ from runtime import UP, host as sim_host
 from sim.controllers import lyapunov_optimal_c
 from agents.policy import SharedPolicy, EpisodeStats
 
+# Release valve: how far above the benign baseline arrival rate the load must be
+# for the malicious-drop filter to stay engaged. Baseline is ~20 UEs/s and a storm
+# drives lam to ~200, so a 2x ceiling (~40) releases the filter as soon as load is
+# clearly benign again while never suppressing a real storm.
+BENIGN_LAM_FACTOR = 2.0
+
 
 def apply_decision(
     sim,
@@ -13,6 +19,8 @@ def apply_decision(
     proposed_servers:     int,
     malicious_drop_prob:      float,
     queue_hold_threshold: int = 10,
+    current_lam:          float = 0.0,
+    release_lam_ceiling:  float | None = None,
 ) -> tuple[int, float, bool]:
     """
     Clamp the proposed servers + policy-gated drop against the safety rules, apply
@@ -22,8 +30,12 @@ def apply_decision(
                   Capacity is otherwise reactive — it follows the proposal (c_star).
                   queue_hold_threshold is a policy knob the Non-RT judge may tune
                   between storms/episodes.
-    Drop rule   : apply malicious_drop_prob during a storm, else 0.0 (the malicious
-                  filter has no purpose off-storm).
+    Drop rule   : apply malicious_drop_prob during a storm, else 0.0. The Non-RT
+                  judge decides when to ENGAGE the filter (storm detection needs
+                  judgment), but a code-side RELEASE valve disengages it the moment
+                  the arrival rate is clearly back to baseline — so legitimate
+                  recovery traffic is never dropped in the lag between the storm
+                  ending and the judge's next assessment.
     """
     current_c    = sim.c
     current_drop = sim.malicious_drop_prob
@@ -36,8 +48,15 @@ def apply_decision(
     else:
         applied_c = proposed_c
 
-    # --- absorption lever: drop probability (policy-gated) ---
-    applied_drop = malicious_drop_prob if storm_active else 0.0
+    # --- absorption lever: drop probability (policy-gated + release valve) ---
+    # Release the filter if load is clearly benign, even if the (possibly stale)
+    # policy still says storm_active — reactive protection of recovery traffic.
+    released = (
+        storm_active
+        and release_lam_ceiling is not None
+        and current_lam <= release_lam_ceiling
+    )
+    applied_drop = malicious_drop_prob if (storm_active and not released) else 0.0
 
     acted = (applied_c != current_c) or (abs(applied_drop - current_drop) > 1e-9)
     sim.set_servers(applied_c)
@@ -76,20 +95,28 @@ async def run_control_loop(
                 V=pol.lyapunov_V, W=pol.lyapunov_W,
             )
 
+            # release-valve ceiling, derived from the scenario's benign baseline
+            benign_baseline = min(p.benign_rate for p in sim.cfg.traffic.phases)
+            release_ceiling = benign_baseline * BENIGN_LAM_FACTOR
+
             applied_c, applied_drop, acted = apply_decision(
                 sim,
                 pol.storm_active,
                 c_star,                    # capacity always reactive
                 pol.malicious_drop_prob,
                 pol.queue_hold_threshold,
+                current_lam=s.lam_current,
+                release_lam_ceiling=release_ceiling,
             )
 
-            marker = "✦" if acted else "·"
+            marker   = "✦" if acted else "·"
+            released = pol.storm_active and applied_drop == 0.0 and pol.malicious_drop_prob > 0.0
+            valve    = "  [valve: drop released]" if released else ""
             print(
                 f"[Fast] {marker} step={step:3d}  t={s.t:5.1f}s  "
                 f"lam={s.lam_current:5.0f}  q={s.queue_len:4d}  "
                 f"c={applied_c:2d} (c*={c_star:2d})  drop={applied_drop:.2f}  "
-                f"storm={pol.storm_active}  acted={acted}"
+                f"storm={pol.storm_active}  acted={acted}{valve}"
             )
 
         # sleep poll_interval; wake immediately if the episode ends
