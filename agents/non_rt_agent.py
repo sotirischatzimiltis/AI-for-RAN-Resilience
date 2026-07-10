@@ -25,12 +25,20 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStreamableHTTP
+from pydantic_ai.usage import UsageLimits
 
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
 from agents.policy import SharedPolicy, EpisodeStats
 
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
+
+# Bound each assessment so a chatty model can't loop tool calls until it hits the
+# framework's default request_limit of 50 (seen stalling an assessment ~60s).
+# Sized with margin above normal use — 3 read tools + the structured-output
+# submission + a little slack (gpt-4o-mini was observed using 5-6 tool calls) —
+# while still well under a true runaway.
+ASSESSMENT_LIMITS = UsageLimits(request_limit=10, tool_calls_limit=8)
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
@@ -141,7 +149,7 @@ async def _do_assessment(
         "trends and return a PolicyUpdate."
     )
     try:
-        result  = await agent.run(prompt)
+        result  = await agent.run(prompt, usage_limits=ASSESSMENT_LIMITS)
         pu      = result.output
         elapsed = time.monotonic() - t0
         policy.update(

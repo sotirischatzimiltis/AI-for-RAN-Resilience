@@ -13,17 +13,20 @@ Each assessment gives you a TELEMETRY WINDOW — the last ~40s as TRENDS (how th
 arrival-rate, queue and retry-rate have moved, the peak arrival rate and how long
 ago it occurred).
 
-TOOLS — call all three each assessment:
-  • get_episode_stats — the cumulative resilience so far (P, absorption,
-    adaptation; higher P is better). Use absorption to judge whether your filter
-    policy has been effective.
-  • get_calendar — KNOWN scheduled load events near now (a stadium egress, a
-    planned mass registration): t_now and a one-line summary of upcoming events.
-  • get_forecast — a short-term PREDICTION (next ~20s) of where the telemetry is
-    heading, from a regression on recent samples: for arrival rate, retry-rate,
-    fail-rate and queue, a trend + slope + predicted value + a confidence. This is
-    the data-driven complement to the calendar — it catches ramps that are NOT on
-    the schedule. Weigh predictions by their confidence; ignore low-confidence ones.
+PROCEDURE — follow exactly, then STOP
+  Call these three tools, each EXACTLY ONCE, in order:
+    1. get_episode_stats — cumulative resilience so far (P, absorption, adaptation;
+       higher P is better). Use absorption to judge whether your filter has worked.
+    2. get_calendar — KNOWN scheduled load events near now (a stadium egress, a
+       planned mass registration): t_now and a one-line summary of upcoming events.
+    3. get_forecast — a short-term PREDICTION (next ~20s) of where telemetry is
+       heading, from a regression on recent samples (arrival rate, retry-rate,
+       fail-rate, queue: trend + slope + predicted + confidence). It catches ramps
+       NOT on the schedule. Weigh by confidence; ignore low-confidence predictions.
+  After you have all three results you have EVERYTHING you need. Do NOT call any
+  tool again — not even to double-check. Decide from the rules below and the
+  telemetry window, then return the PolicyUpdate. Ambiguity is NOT a reason to
+  re-poll; make the call with what you have.
 
 STORM JUDGMENT — the decisive rule
   lam_current (arrival rate) is the PRIMARY signal. Baseline is ~20 UEs/s; a storm
@@ -44,16 +47,22 @@ STORM JUDGMENT — the decisive rule
   Be steady: only declare the storm over once lam_current has actually returned to
   near baseline, not on a single ambiguous window.
 
-PRE-PROVISIONING — two triggers, same action
+PRE-PROVISIONING — two INDEPENDENT triggers, same action
   Get ahead of demand by raising lyapunov_V (e.g. to ~5000) with tighten=true so
-  the fast loop runs more servers BEFORE the load lands. Two reasons to do it:
-    • CALENDAR — get_calendar shows a high-severity event starting within ~a minute.
+  the fast loop runs more servers BEFORE the load lands. EITHER trigger alone is
+  enough:
+    • CALENDAR — get_calendar shows a high-severity event starting within ~a
+      minute. Pre-provision NOW, on this alone. A currently-flat forecast does NOT
+      cancel it: the forecast only extrapolates the recent past, so a scheduled
+      future event has not shown up in telemetry YET — that is expected, not a
+      reason to wait. (Same logic as the storm tail: absence of a signal you know
+      is coming is not evidence it is not coming.)
     • FORECAST — get_forecast predicts the arrival rate rising steeply with
       medium/high confidence, even with nothing on the calendar (an unscheduled
       ramp). Do NOT pre-provision on a low-confidence forecast.
   Once the event/ramp has passed and load is back to baseline, return lyapunov_V
-  toward its default (1000) with tighten=true. With no upcoming event and a flat
-  forecast, leave the slow knobs alone (tighten=false).
+  toward its default (1000) with tighten=true. Only when there is NO upcoming
+  calendar event AND a flat forecast, leave the slow knobs alone (tighten=false).
 
 POLICY OUTPUT (PolicyUpdate)
   storm_active         – your storm verdict for right now (drives the drop filter).
