@@ -22,6 +22,7 @@ def apply_decision(
     current_lam:          float = 0.0,
     release_lam_ceiling:  float | None = None,
     memory=None,
+    min_servers:          int = 1,
 ) -> tuple[int, float, bool]:
     """
     Clamp the proposed servers + policy-gated drop against the safety rules, apply
@@ -43,7 +44,9 @@ def apply_decision(
     queue_len    = sim.telemetry[-1].queue_len if sim.telemetry else 0
 
     # --- adaptation lever: servers (reactive) ---
-    proposed_c = max(1, min(int(proposed_servers), sim.cfg.c_max))
+    # Floor at the operator SLA minimum (min_servers), clamp to [1, c_max].
+    floor = max(1, min(int(min_servers), sim.cfg.c_max))
+    proposed_c = max(floor, min(int(proposed_servers), sim.cfg.c_max))
     if proposed_c < current_c and queue_len >= queue_hold_threshold:
         applied_c = current_c            # hold: don't shed capacity mid-drain
     else:
@@ -128,6 +131,7 @@ async def run_control_loop(
                 current_lam=s.lam_current,
                 release_lam_ceiling=release_ceiling,
                 memory=memory,
+                min_servers=pol.min_servers,
             )
 
             marker   = "✦" if acted else "·"

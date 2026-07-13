@@ -26,7 +26,9 @@ from pydantic_ai import Agent
 
 from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
+from agents.intent_agent        import build_intent_agent, PRIORITY_VW
 from agents.policy              import SharedPolicy, EpisodeStats
+from event_calendar             import ScheduledEvent
 from runtime                    import host as sim_host, UP
 from sim.metrics                import (resilience_multi, benign_success_rate,
                                         malicious_blocked_rate, per_storm_blocked)
@@ -37,25 +39,42 @@ from storm_memory               import StormMemory
 # ---------------------------------------------------------------------------
 # Intent routing
 # ---------------------------------------------------------------------------
-# The Near-RT path is now a pure code loop with no LLM, so operator intents go
-# to the Non-RT-Agent (the only sub-agent). Richer routing / an LLM orchestrator
-# can be added here later.
+# An operator intent is interpreted by the Orchestrator (intent) agent into a
+# structured IntentDirective, which the Orchestrator APPLIES to shared policy:
+# the operator's V/W posture and SLA capacity floor (overriding the Non-RT judge's
+# autonomous tuning), plus any named future event pushed onto the site calendar.
 
 async def route_intent(
-    intent: str,
-    non_rt: Agent,
-    policy: SharedPolicy,
-    stats:  EpisodeStats | None = None,
+    intent:       str,
+    intent_agent: Agent,
+    policy:       SharedPolicy,
+    stats:        EpisodeStats | None = None,
 ) -> str:
-    """Send a one-shot operator intent to the Non-RT-Agent; return its response."""
+    """Interpret an operator intent and apply the resulting directive to policy."""
     if stats:
         stats.intents_routed += 1
 
-    print(f"[Orchestrator] Routing intent to Non-RT: {intent[:80]}")
-    result   = await non_rt.run(f"[Operator intent] {intent}\n{policy.context_str()}")
-    response = str(result.output)
-    print(f"[Orchestrator] Non-RT response: {response[:120]}")
-    return response
+    print(f"[Orchestrator] Operator intent: {intent}")
+    result = await intent_agent.run(f"Operator intent: {intent}\nCurrent {policy.context_str()}")
+    d = result.output
+
+    # resolve the Lyapunov posture: explicit weights win, else derive from priority
+    base_v, base_w = PRIORITY_VW.get(d.priority, PRIORITY_VW["balanced"])
+    v = d.lyapunov_V if d.lyapunov_V is not None else base_v
+    w = d.lyapunov_W if d.lyapunov_W is not None else base_w
+    policy.set_operator(lyapunov_V=v, lyapunov_W=w, min_servers=d.min_servers)
+
+    # a named future event → the site's calendar (read via get_calendar)
+    scheduled = ""
+    if d.schedule_event_name and d.schedule_event_t is not None:
+        sim_host.calendar.append(ScheduledEvent(
+            t_start=d.schedule_event_t, name=d.schedule_event_name, severity=d.schedule_event_severity))
+        scheduled = f"; scheduled '{d.schedule_event_name}' at t={d.schedule_event_t:.0f}s"
+
+    floor = f", min_servers={d.min_servers}" if d.min_servers else ""
+    applied = (f"priority={d.priority}, V={v:.0f}, W={w:.2f}{floor}{scheduled}")
+    print(f"[Orchestrator] Applied directive: {applied}  — {d.reasoning}")
+    return applied
 
 
 # ---------------------------------------------------------------------------
@@ -92,7 +111,8 @@ async def run_episode(
     intents               : optional list of (delay_s, target, intent_text)
                             injected at the given wall-clock delays into the episode
     """
-    non_rt = build_non_rt_agent(model)     # storm judge + policy writer + intent Q&A
+    non_rt = build_non_rt_agent(model)     # per-site storm judge + policy writer
+    intent_agent = build_intent_agent(model)  # Orchestrator: operator intent -> directive
 
     # Seed the slow tuning knobs from the previous episode if persistence is on;
     # the operational levers (storm_active, drop) always start fresh.
@@ -131,12 +151,12 @@ async def run_episode(
         stop_event.set()
         print("[Orchestrator] Episode complete — signalling loops to stop.")
 
-    # Optional scheduled operator intents (target field retained for compatibility,
-    # unused now that Non-RT is the sole intent target)
+    # Optional operator intents, injected at scheduled wall-clock delays and
+    # interpreted by the Orchestrator intent agent (target field kept for compat).
     async def _inject(delay: float, target: str, intent: str):
         await asyncio.sleep(delay)
         if not stop_event.is_set():
-            await route_intent(intent, non_rt, policy, stats)
+            await route_intent(intent, intent_agent, policy, stats)
 
     t_start = time.monotonic()
 
@@ -205,8 +225,10 @@ async def run_episode(
         "final_policy": {
             "malicious_drop_prob":  policy.malicious_drop_prob,
             "queue_hold_threshold": policy.queue_hold_threshold,
-            "lyapunov_V":           policy.lyapunov_V,
-            "lyapunov_W":           policy.lyapunov_W,
+            "lyapunov_V":           policy.snapshot().lyapunov_V,
+            "lyapunov_W":           policy.snapshot().lyapunov_W,
+            "min_servers":          policy.min_servers,
+            "operator_override":    policy.operator_V is not None or policy.operator_W is not None,
         },
         "completed": sim_stats.completed if sim_stats else 0,
         "failed":    sim_stats.failed    if sim_stats else 0,

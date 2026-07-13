@@ -14,12 +14,17 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class PolicyView:
-    """Immutable, atomic snapshot of policy state for the fast loop to read."""
+    """Immutable, atomic snapshot of policy state for the fast loop to read.
+
+    lyapunov_V/W here are the EFFECTIVE weights: an operator override (set via a
+    routed intent) takes precedence over the Non-RT judge's autonomous tuning.
+    min_servers is an operator SLA capacity floor (default 1)."""
     malicious_drop_prob:  float
     storm_active:         bool
     queue_hold_threshold: int
     lyapunov_V:           float
     lyapunov_W:           float
+    min_servers:          int
     last_updated:         float
 
 
@@ -46,10 +51,34 @@ class SharedPolicy:
     lyapunov_V:          float = 1000.0
     lyapunov_W:          float = 1.0
 
+    # Operator overrides, set by a routed intent via set_operator(). When present
+    # they OUTRANK the Non-RT judge's autonomous tuning (an operator command wins).
+    operator_V:          float | None = None
+    operator_W:          float | None = None
+    min_servers:         int = 1
+
     last_updated: float = field(default=0.0, repr=False)
 
     def __post_init__(self):
         self._lock = threading.Lock()
+
+    def set_operator(
+        self,
+        *,
+        lyapunov_V:  float | None = None,
+        lyapunov_W:  float | None = None,
+        min_servers: int | None = None,
+    ) -> None:
+        """Apply an operator directive (from a routed intent). These override the
+        Non-RT judge until cleared. Pass a value to set it; None leaves it unchanged."""
+        with self._lock:
+            if lyapunov_V is not None:
+                self.operator_V = max(0.0, float(lyapunov_V))
+            if lyapunov_W is not None:
+                self.operator_W = max(0.0, float(lyapunov_W))
+            if min_servers is not None:
+                self.min_servers = max(1, int(min_servers))
+            self.last_updated = time.monotonic()
 
     def update(
         self,
@@ -82,14 +111,16 @@ class SharedPolicy:
             self.last_updated = time.monotonic()
 
     def snapshot(self) -> PolicyView:
-        """Return an immutable, consistent view of all policy fields at once."""
+        """Return an immutable, consistent view of all policy fields at once.
+        Operator overrides take precedence over the Non-RT judge's V/W."""
         with self._lock:
             return PolicyView(
                 malicious_drop_prob=self.malicious_drop_prob,
                 storm_active=self.storm_active,
                 queue_hold_threshold=self.queue_hold_threshold,
-                lyapunov_V=self.lyapunov_V,
-                lyapunov_W=self.lyapunov_W,
+                lyapunov_V=self.operator_V if self.operator_V is not None else self.lyapunov_V,
+                lyapunov_W=self.operator_W if self.operator_W is not None else self.lyapunov_W,
+                min_servers=self.min_servers,
                 last_updated=self.last_updated,
             )
 
@@ -99,12 +130,16 @@ class SharedPolicy:
             if self.last_updated:
                 age = time.monotonic() - self.last_updated
                 age_str = f", last Non-RT update {age:.0f}s ago"
+            op = ""
+            if self.operator_V is not None or self.operator_W is not None or self.min_servers > 1:
+                op = (f" Operator override: "
+                      f"V={self.operator_V}, W={self.operator_W}, min_servers={self.min_servers}.")
             return (
                 f"Policy: storm_active={self.storm_active}, "
                 f"malicious_drop_prob={self.malicious_drop_prob:.2f}, "
                 f"queue_hold_threshold={self.queue_hold_threshold}, "
                 f"lyapunov_V={self.lyapunov_V:.0f}, lyapunov_W={self.lyapunov_W:.2f}"
-                f"{age_str}."
+                f"{age_str}.{op}"
             )
 
 

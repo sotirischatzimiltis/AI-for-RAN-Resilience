@@ -104,6 +104,12 @@ async def main(args: argparse.Namespace) -> None:
     )
     print()
 
+    # Optional operator intent, injected at a wall-clock delay into the episode
+    intents = None
+    if args.intent:
+        intents = [(args.intent_at, "site", args.intent)]
+        print(f"[run] Operator intent scheduled at +{args.intent_at:.0f}s: {args.intent}")
+
     t0 = time.monotonic()
     report = await run_episode(
         model=model,
@@ -118,6 +124,7 @@ async def main(args: argparse.Namespace) -> None:
         persist_knobs=args.persist_knobs,
         learn_within=args.learn_within,
         learn_across=args.learn_across,
+        intents=intents,
     )
     elapsed = time.monotonic() - t0
 
@@ -173,5 +180,10 @@ if __name__ == "__main__":
                         help="fast loop learns the storm signature and auto-engages the filter on later storms")
     parser.add_argument("--learn-across",        action="store_true", dest="learn_across",
                         help="persist the learned storm signature so the next episode starts primed")
+    parser.add_argument("--intent",              type=str, default=None,
+                        help="operator intent (free text) routed to the Orchestrator, e.g. "
+                             "\"guarantee at least 4 servers\"")
+    parser.add_argument("--intent-at",           type=float, default=5.0, dest="intent_at",
+                        help="wall-clock seconds into the run to inject the operator intent")
     args = parser.parse_args()
     asyncio.run(main(args))

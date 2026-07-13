@@ -115,9 +115,13 @@ and a deterministic **fast control loop**, over the simulation above.
   across episodes. `policy_store.py`.
 
 ### 2.4 Coordination & guardrails
-- **Orchestrator** — starts episodes, launches the agent loops, routes operator intents,
-  and returns the episode report. (Operator-intent → policy translation is the main open
-  functionality gap.) `agents/orchestrator.py`.
+- **Orchestrator + operator intents** — the network-management (SMO/rApp) tier. A free-text
+  operator intent ("guarantee 4 servers", "favour QoS tonight", "big match ends at t=300")
+  is interpreted by an LLM **intent agent** into a structured `IntentDirective` and applied
+  to policy: the Lyapunov posture (V/W), an SLA capacity **floor** (`min_servers`), and any
+  named future event pushed onto the site calendar. Operator overrides **outrank** the
+  Non-RT judge's autonomous tuning until changed. `agents/intent_agent.py`,
+  `agents/orchestrator.py::route_intent`, `prompts/orchestrator.md`.
 - **Guardrails** — server clamp `[1, c_max]`; queue-hold threshold (don't shed capacity
   while the queue is still draining); LLM request / tool-call limits to bound cost.
 
