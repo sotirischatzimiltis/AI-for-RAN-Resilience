@@ -20,13 +20,14 @@ from __future__ import annotations
 
 import asyncio
 import time
-from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
+from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
-from agents.intent_agent        import build_intent_agent, PRIORITY_VW
 from agents.policy              import SharedPolicy, EpisodeStats
 from event_calendar             import ScheduledEvent
 from runtime                    import host as sim_host, UP
@@ -37,44 +38,95 @@ from storm_memory               import StormMemory
 
 
 # ---------------------------------------------------------------------------
-# Intent routing
+# The Orchestrator agent — understand an operator intent, then act
 # ---------------------------------------------------------------------------
-# An operator intent is interpreted by the Orchestrator (intent) agent into a
-# structured IntentDirective, which the Orchestrator APPLIES to shared policy:
-# the operator's V/W posture and SLA capacity floor (overriding the Non-RT judge's
-# autonomous tuning), plus any named future event pushed onto the site calendar.
+# A single agent at the network-management (SMO/rApp) tier. It reads a free-text
+# operator intent and produces ONE OperatorDirective that can:
+#   • SET POLICY itself — the network posture (V/W), an SLA capacity floor, a
+#     scheduled event — overriding the site's autonomous tuning; and/or
+#   • DELEGATE to the Non-RT judge — a standing instruction the storm judge reads
+#     in every assessment (operational nuance the site should apply).
+# Either or both, in one shot.
+
+_PROMPTS_DIR  = Path(__file__).parent.parent / "prompts"
+SYSTEM_PROMPT = (_PROMPTS_DIR / "orchestrator.md").read_text()
+
+# priority -> (V, W) when the operator gives no explicit weights
+PRIORITY_VW = {
+    "qos":      (5000.0, 1.0),   # favour service: many servers
+    "cost":     (500.0, 5.0),    # favour efficiency: few servers
+    "balanced": (1000.0, 1.0),   # the default posture
+}
+
+
+class OperatorDirective(BaseModel):
+    priority: Literal["qos", "cost", "balanced"] = Field(
+        description="Network posture: 'qos' favours service (more servers), 'cost' favours "
+                    "efficiency (fewer), 'balanced' is neutral. Use 'balanced' if the intent "
+                    "is only a delegation to the site judge")
+    lyapunov_V: float | None = Field(default=None, ge=0.0, le=100000.0,
+        description="Explicit utility-weight override (higher -> more servers); null -> from priority")
+    lyapunov_W: float | None = Field(default=None, ge=0.0, le=1000.0,
+        description="Explicit cost-weight override (higher -> fewer servers); null -> from priority")
+    min_servers: int | None = Field(default=None, ge=1, le=64,
+        description="SLA capacity FLOOR: never run fewer than this. Null = no floor")
+    schedule_event_name: str | None = Field(default=None,
+        description="Label of a KNOWN upcoming load event named in the intent; else null")
+    schedule_event_t: float | None = Field(default=None, ge=0.0,
+        description="Simulated time (s) the scheduled event begins; else null")
+    schedule_event_severity: Literal["low", "medium", "high"] = Field(default="high",
+        description="Expected load of the scheduled event")
+    nonrt_instruction: str | None = Field(default=None,
+        description="If the intent is operational nuance for the SITE JUDGE rather than a "
+                    "posture change — e.g. 'tonight's surge is a legitimate flash crowd, do "
+                    "not treat high load alone as an attack' — put a concise standing "
+                    "instruction here for the Non-RT storm judge; else null")
+    reasoning: str = Field(description="One sentence: how this serves the operator's intent")
+
+
+def build_orchestrator_agent(model) -> Agent:
+    return Agent(model=model, output_type=OperatorDirective, system_prompt=SYSTEM_PROMPT)
+
 
 async def route_intent(
     intent:       str,
-    intent_agent: Agent,
+    orchestrator: Agent,
     policy:       SharedPolicy,
     stats:        EpisodeStats | None = None,
 ) -> str:
-    """Interpret an operator intent and apply the resulting directive to policy."""
+    """Understand an operator intent and act: set policy and/or delegate to the judge."""
     if stats:
         stats.intents_routed += 1
 
     print(f"[Orchestrator] Operator intent: {intent}")
-    result = await intent_agent.run(f"Operator intent: {intent}\nCurrent {policy.context_str()}")
+    result = await orchestrator.run(f"Operator intent: {intent}\nCurrent {policy.context_str()}")
     d = result.output
+    actions = []
 
-    # resolve the Lyapunov posture: explicit weights win, else derive from priority
-    base_v, base_w = PRIORITY_VW.get(d.priority, PRIORITY_VW["balanced"])
-    v = d.lyapunov_V if d.lyapunov_V is not None else base_v
-    w = d.lyapunov_W if d.lyapunov_W is not None else base_w
-    policy.set_operator(lyapunov_V=v, lyapunov_W=w, min_servers=d.min_servers)
+    # --- branch A: set policy directly (network posture / SLA / schedule) ---
+    posture_changed = (d.priority != "balanced" or d.lyapunov_V is not None
+                       or d.lyapunov_W is not None or d.min_servers is not None)
+    if posture_changed:
+        base_v, base_w = PRIORITY_VW.get(d.priority, PRIORITY_VW["balanced"])
+        v = d.lyapunov_V if d.lyapunov_V is not None else base_v
+        w = d.lyapunov_W if d.lyapunov_W is not None else base_w
+        policy.set_operator(lyapunov_V=v, lyapunov_W=w, min_servers=d.min_servers)
+        floor = f", min_servers={d.min_servers}" if d.min_servers else ""
+        actions.append(f"policy(priority={d.priority}, V={v:.0f}, W={w:.2f}{floor})")
 
-    # a named future event → the site's calendar (read via get_calendar)
-    scheduled = ""
     if d.schedule_event_name and d.schedule_event_t is not None:
         sim_host.calendar.append(ScheduledEvent(
             t_start=d.schedule_event_t, name=d.schedule_event_name, severity=d.schedule_event_severity))
-        scheduled = f"; scheduled '{d.schedule_event_name}' at t={d.schedule_event_t:.0f}s"
+        actions.append(f"scheduled '{d.schedule_event_name}'@t={d.schedule_event_t:.0f}s")
 
-    floor = f", min_servers={d.min_servers}" if d.min_servers else ""
-    applied = (f"priority={d.priority}, V={v:.0f}, W={w:.2f}{floor}{scheduled}")
-    print(f"[Orchestrator] Applied directive: {applied}  — {d.reasoning}")
-    return applied
+    # --- branch B: delegate a standing instruction to the Non-RT judge ---
+    if d.nonrt_instruction:
+        policy.set_operator_note(d.nonrt_instruction)
+        actions.append(f"delegated to Non-RT: \"{d.nonrt_instruction}\"")
+
+    summary = "; ".join(actions) if actions else "no-op"
+    print(f"[Orchestrator] {summary}  — {d.reasoning}")
+    return summary
 
 
 # ---------------------------------------------------------------------------
@@ -111,8 +163,8 @@ async def run_episode(
     intents               : optional list of (delay_s, target, intent_text)
                             injected at the given wall-clock delays into the episode
     """
-    non_rt = build_non_rt_agent(model)     # per-site storm judge + policy writer
-    intent_agent = build_intent_agent(model)  # Orchestrator: operator intent -> directive
+    non_rt = build_non_rt_agent(model)              # per-site storm judge + policy writer
+    orchestrator = build_orchestrator_agent(model)  # network tier: understands operator intents
 
     # Seed the slow tuning knobs from the previous episode if persistence is on;
     # the operational levers (storm_active, drop) always start fresh.
@@ -156,7 +208,7 @@ async def run_episode(
     async def _inject(delay: float, target: str, intent: str):
         await asyncio.sleep(delay)
         if not stop_event.is_set():
-            await route_intent(intent, intent_agent, policy, stats)
+            await route_intent(intent, orchestrator, policy, stats)
 
     t_start = time.monotonic()
 

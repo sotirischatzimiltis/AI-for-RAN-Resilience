@@ -56,6 +56,9 @@ class SharedPolicy:
     operator_V:          float | None = None
     operator_W:          float | None = None
     min_servers:         int = 1
+    # A standing instruction the Orchestrator delegated to the Non-RT judge (operational
+    # nuance, e.g. "tonight's surge is legitimate"). The judge reads it each assessment.
+    operator_note:       str = ""
 
     last_updated: float = field(default=0.0, repr=False)
 
@@ -79,6 +82,16 @@ class SharedPolicy:
             if min_servers is not None:
                 self.min_servers = max(1, int(min_servers))
             self.last_updated = time.monotonic()
+
+    def set_operator_note(self, note: str) -> None:
+        """Store a standing operator instruction the Non-RT judge will read each assessment."""
+        with self._lock:
+            self.operator_note = note or ""
+            self.last_updated = time.monotonic()
+
+    def get_operator_note(self) -> str:
+        with self._lock:
+            return self.operator_note
 
     def update(
         self,

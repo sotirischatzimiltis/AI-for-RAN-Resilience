@@ -115,13 +115,18 @@ and a deterministic **fast control loop**, over the simulation above.
   across episodes. `policy_store.py`.
 
 ### 2.4 Coordination & guardrails
-- **Orchestrator + operator intents** — the network-management (SMO/rApp) tier. A free-text
-  operator intent ("guarantee 4 servers", "favour QoS tonight", "big match ends at t=300")
-  is interpreted by an LLM **intent agent** into a structured `IntentDirective` and applied
-  to policy: the Lyapunov posture (V/W), an SLA capacity **floor** (`min_servers`), and any
-  named future event pushed onto the site calendar. Operator overrides **outrank** the
-  Non-RT judge's autonomous tuning until changed. `agents/intent_agent.py`,
-  `agents/orchestrator.py::route_intent`, `prompts/orchestrator.md`.
+- **Orchestrator + operator intents** — the network-management (SMO/rApp) tier is a single
+  LLM agent that reads a free-text operator intent and decides how to act. Two branches,
+  either or both per intent:
+  - **Set policy** — network posture (V/W from `priority` or explicit weights), an SLA
+    capacity **floor** (`min_servers`), or a scheduled calendar event. These **outrank** the
+    Non-RT judge's autonomous tuning until changed.
+  - **Delegate to the site judge** — a standing `nonrt_instruction` the Non-RT agent reads
+    in every assessment (operational nuance, e.g. *"tonight's surge is a legitimate flash
+    crowd — don't treat high load as an attack"*), which biases its storm judgment.
+
+  `agents/orchestrator.py` (`OperatorDirective`, `build_orchestrator_agent`, `route_intent`),
+  `prompts/orchestrator.md`. Exposed via `run.py --intent / --intent-at`.
 - **Guardrails** — server clamp `[1, c_max]`; queue-hold threshold (don't shed capacity
   while the queue is still draining); LLM request / tool-call limits to bound cost.
 

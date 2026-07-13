@@ -141,9 +141,14 @@ async def _do_assessment(
     t0     = time.monotonic()
     window = summarize_window(sim_host.sim.telemetry) if sim_host.sim else "No sim running."
 
+    note = policy.get_operator_note()
+    note_line = (f"\nOPERATOR INSTRUCTION (from the network operator, honour it): {note}\n"
+                 if note else "")
+
     prompt = (
         f"Assessment #{assessment}. {policy.context_str()}\n"
         f"Recent telemetry window:\n{window}\n"
+        f"{note_line}"
         "Call get_episode_stats for the cumulative resilience (P, absorption, adaptation), "
         "get_calendar for scheduled load events, and get_forecast for the short-term "
         "prediction of where load is heading. Then judge storm-vs-noise from the window "
