@@ -12,6 +12,19 @@ from typing import List, Sequence
 from .simulator import TelemetrySample
 
 
+def success_rate(completed: int, failed: int) -> float:
+    """Fraction of UEs that eventually attached, of those that reached a terminal
+    state: completed / (completed + failed).
+
+    Report this ALONGSIDE the resilience score P. P measures the utility of served
+    UEs and can read high even while many UEs are dropped (e.g. an over-provisioned
+    fixed policy that fails admissions but keeps served-UE utility ideal). P without
+    a success rate is misleading.
+    """
+    terminal = completed + failed
+    return completed / terminal if terminal > 0 else 1.0
+
+
 @dataclass
 class UtilityParams:
     wA: float = 0.5

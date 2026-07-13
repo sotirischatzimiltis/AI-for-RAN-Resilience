@@ -28,7 +28,8 @@ from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
 from runtime                    import host as sim_host, UP
-from sim.metrics                import resilience_score
+from sim.metrics                import resilience_score, success_rate
+from policy_store               import load_knobs, save_knobs
 
 
 # ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ async def run_episode(
     t_post:                float | None = None,
     calendar: list | None = None,
     intents: list[tuple[float, str, str]] | None = None,
+    persist_knobs:         bool = False,
 ) -> dict:
     """
     Run one full episode with autonomous Near-RT and Non-RT loops.
@@ -87,7 +89,13 @@ async def run_episode(
                             injected at the given wall-clock delays into the episode
     """
     non_rt = build_non_rt_agent(model)     # storm judge + policy writer + intent Q&A
-    policy  = SharedPolicy()
+
+    # Seed the slow tuning knobs from the previous episode if persistence is on;
+    # the operational levers (storm_active, drop) always start fresh.
+    knobs = load_knobs() if persist_knobs else None
+    policy = SharedPolicy(**knobs) if knobs else SharedPolicy()
+    if knobs:
+        print(f"[Orchestrator] Loaded persisted knobs: {knobs}")
     stats   = EpisodeStats()
 
     # Publish the operator calendar so the get_calendar MCP tool can read it
@@ -131,6 +139,13 @@ async def run_episode(
 
     await asyncio.gather(*tasks)
 
+    # Carry the tuned posture into the next episode (slow knobs only).
+    if persist_knobs:
+        save_knobs(policy)
+        print(f"[Orchestrator] Persisted knobs for next episode: "
+              f"queue_hold={policy.queue_hold_threshold}, "
+              f"V={policy.lyapunov_V:.0f}, W={policy.lyapunov_W:.2f}")
+
     wall_time = time.monotonic() - t_start
     sim_stats = sim_host.sim.stats if sim_host.sim else None
 
@@ -155,6 +170,9 @@ async def run_episode(
         "non_rt_errors":       stats.non_rt_errors,
         "intents_routed":      stats.intents_routed,
         "final_P":             round(final_P, 4),
+        "success_rate":        round(success_rate(
+                                   sim_stats.completed if sim_stats else 0,
+                                   sim_stats.failed if sim_stats else 0), 4),
         "final_policy": {
             "malicious_drop_prob":  policy.malicious_drop_prob,
             "queue_hold_threshold": policy.queue_hold_threshold,

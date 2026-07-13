@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fastmcp import FastMCP
 
-from sim.metrics import resilience_score
+from sim.metrics import resilience_score, success_rate
 from runtime import host, UP
 from event_calendar import summarize_calendar
 from forecast import forecast_signals, summarize_forecast
@@ -80,6 +80,7 @@ def get_episode_stats() -> dict:
         "failed":        host.sim.stats.failed,
         "retries":       host.sim.stats.retries,
         "arrivals":      host.sim.stats.arrivals,
+        "success_rate":  round(success_rate(host.sim.stats.completed, host.sim.stats.failed), 4),
         "resilience_P":  round(r["P"], 4),
         "absorption":    round(r["absorption"], 4),
         "adaptation":    round(r["adaptation"], 4),
