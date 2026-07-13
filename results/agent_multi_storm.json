@@ -1,0 +1,7 @@
+{
+  "scenario": "multi_storm", "model": "openrouter:openai/gpt-4o-mini", "seeds": [1,2,3],
+  "agent_P_mean": 0.908, "agent_P_std": 0.011,
+  "lyap_P_mean": 0.834, "lift_mean": 0.074, "lift_std": 0.011,
+  "benign_mean": 1.000, "blocked_mean": 0.315,
+  "_note": "measured this session (agent_sweep multi_storm fast cadence rt4/int4, 3 seeds)"
+}

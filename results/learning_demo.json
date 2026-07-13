@@ -1,0 +1,51 @@
+{
+  "scenario": "multi_storm",
+  "seed": 3,
+  "model": "openrouter:openai/gpt-4o-mini",
+  "runs": [
+    {
+      "label": "baseline (no learn)",
+      "blocked": 0.1467,
+      "per_storm_blocked": [
+        0.4032,
+        0.0,
+        0.1337
+      ],
+      "benign": 1.0,
+      "P": 0.9353
+    },
+    {
+      "label": "learn episode 1",
+      "blocked": 0.6117,
+      "per_storm_blocked": [
+        0.0,
+        0.7969,
+        0.7714
+      ],
+      "benign": 1.0,
+      "P": 0.8441
+    },
+    {
+      "label": "learn episode 2",
+      "blocked": 0.7834,
+      "per_storm_blocked": [
+        0.7803,
+        0.7909,
+        0.7789
+      ],
+      "benign": 1.0,
+      "P": 0.8262
+    },
+    {
+      "label": "learn episode 3",
+      "blocked": 0.7795,
+      "per_storm_blocked": [
+        0.779,
+        0.7858,
+        0.7747
+      ],
+      "benign": 1.0,
+      "P": 0.8498
+    }
+  ]
+}

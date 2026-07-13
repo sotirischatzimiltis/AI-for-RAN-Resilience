@@ -131,19 +131,29 @@ def fig_per_storm(learn):
         return None
     runs = learn["runs"]
     base = next((r for r in runs if "baseline" in r["label"]), None)
-    warm = runs[-1]
+    ep1  = next((r for r in runs if r["label"].endswith("episode 1")), None)
+    ep2  = next((r for r in runs if r["label"].endswith("episode 2")), None)
     if not base or not base.get("per_storm_blocked"):
         return None
+    series = [("no learning", base, C_BASE),
+              ("within-episode (ep 1)", ep1, C_AGENT),
+              ("across-episode (ep 2, primed)", ep2, C_LEARN)]
+    series = [(lab, r, c) for lab, r, c in series if r and r.get("per_storm_blocked")]
     n = len(base["per_storm_blocked"])
     x = range(n)
-    fig, ax = plt.subplots(figsize=(7, 4.2))
-    w = 0.38
-    ax.bar([i - w/2 for i in x], base["per_storm_blocked"], w, color=C_BASE, label="baseline (no learn)")
-    ax.bar([i + w/2 for i in x], warm["per_storm_blocked"], w, color=C_LEARN, label=warm["label"])
-    ax.set_xticks(list(x)); ax.set_xticklabels([f"storm {i+1}" for i in x])
-    ax.set_ylim(0, 1.05); ax.set_ylabel("fraction of botnet blocked")
-    ax.set_title("Per-storm blocking: the fast loop learns after storm 1", fontsize=12)
-    ax.legend(); ax.grid(axis="y", alpha=0.2)
+    fig, ax = plt.subplots(figsize=(8, 4.4))
+    m = len(series)
+    w = 0.8 / m
+    for j, (lab, r, c) in enumerate(series):
+        offs = (j - (m - 1) / 2) * w
+        ax.bar([i + offs for i in x], r["per_storm_blocked"], w, color=c, label=lab)
+    ax.set_xticks(list(x)); ax.set_xticklabels([f"storm {i+1}\n(botnet {b})" for i, b in
+                                                zip(x, [40, 60, 80])], fontsize=9)
+    ax.set_ylim(0, 1.0); ax.set_ylabel("fraction of botnet blocked")
+    ax.set_title("Per-storm blocking: cold on storm 1, then learned\n"
+                 "(within-episode: ep1 jumps after storm 1; across-episode: ep2 primed from the start)",
+                 fontsize=11)
+    ax.legend(fontsize=8.5); ax.grid(axis="y", alpha=0.2)
     fig.tight_layout()
     out = FIGS / "fig3_per_storm_blocked.png"
     fig.savefig(out, dpi=140); plt.close(fig)
