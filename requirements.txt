@@ -1,0 +1,4 @@
+simpy>=4.0
+numpy
+matplotlib
+pydantic-ai[mcp]>=0.4
