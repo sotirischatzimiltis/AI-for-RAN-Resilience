@@ -29,7 +29,7 @@ from sim.config import (
 )
 from sim.simulator import StormSim
 from sim.controllers import FixedController, LyapunovController, ForecastLyapunov
-from sim.metrics import UtilityParams, resilience_multi, success_rate
+from sim.metrics import UtilityParams, resilience_multi, benign_success_rate
 
 LQMAX = 1500.0
 UP    = UtilityParams(lq_max=LQMAX, kB=0.004)
@@ -60,14 +60,14 @@ def run_one(controller_factory, c0: int, scenario: str, seed: int) -> tuple[floa
     sim = StormSim(cfg)
     sim.run(controller=controller_factory())
     rm = resilience_multi(sim.telemetry, sim.mu_single, UP, sim.cfg.traffic.storm_windows())
-    succ = success_rate(sim.stats.completed, sim.stats.failed)
+    succ = benign_success_rate(sim.stats)
     return rm["P_episode"], sim.stats.failed, succ
 
 
 def sweep(scenario: str, seeds: list[int]) -> None:
     print(f"\n=== {scenario}  ({len(seeds)} seeds: {seeds[0]}..{seeds[-1]}) ===")
     print(f"{'controller':18s}  {'P mean':>7s} {'± std':>7s}   "
-          f"{'succ%':>6s}   {'fails(mean)':>11s}   note")
+          f"{'benign%':>7s}   {'fails(mean)':>11s}   note")
     for label, (factory, c0) in CONTROLLERS.items():
         ps, fails, succs = [], [], []
         for s in seeds:
@@ -81,7 +81,7 @@ def sweep(scenario: str, seeds: list[int]) -> None:
         # flag the P-looks-great-but-drops-users case
         note = "P MISLEADING (low admission)" if (mean >= 0.9 and succ < 0.9) else ""
         print(f"{label:18s}  {mean:7.3f} {sd:7.3f}   "
-              f"{succ*100:5.1f}%   {statistics.mean(fails):11.0f}   {note}")
+              f"{succ*100:6.1f}%   {statistics.mean(fails):11.0f}   {note}")
 
 
 def main() -> None:

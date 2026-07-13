@@ -12,17 +12,27 @@ from typing import List, Sequence
 from .simulator import TelemetrySample
 
 
-def success_rate(completed: int, failed: int) -> float:
-    """Fraction of UEs that eventually attached, of those that reached a terminal
-    state: completed / (completed + failed).
+def benign_success_rate(stats) -> float:
+    """Fraction of LEGITIMATE users that eventually attached:
+    benign_completed / (benign_completed + benign_failed).
 
-    Report this ALONGSIDE the resilience score P. P measures the utility of served
-    UEs and can read high even while many UEs are dropped (e.g. an over-provisioned
-    fixed policy that fails admissions but keeps served-UE utility ideal). P without
-    a success rate is misleading.
+    This is the admission metric that matters. The aggregate completed/failed is
+    misleading because `failed` also counts every botnet UE the filter blocks —
+    so an effective filter would look like it is 'failing' users. Only the benign
+    figures answer 'did real users get served?'. Report this ALONGSIDE P.
     """
-    terminal = completed + failed
-    return completed / terminal if terminal > 0 else 1.0
+    served = stats.benign_completed + stats.benign_failed
+    return stats.benign_completed / served if served > 0 else 1.0
+
+
+def malicious_blocked_rate(stats) -> float:
+    """Fraction of botnet UEs denied service (dropped at admission OR eventually
+    failed): (malicious_dropped + malicious_failed) / all malicious outcomes.
+    High is good — the attack was absorbed."""
+    mal_denied    = stats.malicious_dropped + stats.malicious_failed
+    mal_completed = stats.completed - stats.benign_completed   # botnet that got through
+    denom = mal_denied + mal_completed
+    return mal_denied / denom if denom > 0 else 0.0
 
 
 @dataclass

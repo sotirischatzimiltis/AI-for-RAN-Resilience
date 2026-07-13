@@ -50,6 +50,14 @@ class Stats:
     arrivals: int = 0
     completion_delays: List[float] = field(default_factory=list)  # successful attach latency (ms)
 
+    # split by UE class so we can tell "legit users served" from "botnet blocked".
+    # failed lumps both a benign UE that timed out AND a botnet UE the filter dropped;
+    # only the benign figures answer "did real users get service?".
+    benign_completed:  int = 0
+    benign_failed:     int = 0   # benign UE that exhausted its retries (genuine denial)
+    malicious_dropped: int = 0   # botnet UE rejected at admission by the filter (desired)
+    malicious_failed:  int = 0   # botnet UE that exhausted retries without being filtered
+
 
 class _Attempt:
     """One attach attempt (a UE may make several across retries)."""
@@ -160,6 +168,7 @@ class StormSim:
             # admission control (rate-limit actuator) acts on malicious UEs
             if malicious and self.rng.random() < self.malicious_drop_prob:
                 self.stats.failed += 1
+                self.stats.malicious_dropped += 1   # botnet blocked at admission (desired)
                 return
 
             att = _Attempt(ue_id, malicious, env)
@@ -173,6 +182,8 @@ class StormSim:
             if att.served_evt in res:
                 # success
                 self.stats.completed += 1
+                if not malicious:
+                    self.stats.benign_completed += 1
                 self.stats.completion_delays.append((env.now - t_arrival) * 1000.0)
                 return
             else:
@@ -188,6 +199,10 @@ class StormSim:
                     yield env.timeout(cfg.botnet_attach_period_ms / 1000.0)
         # exhausted attempts
         self.stats.failed += 1
+        if malicious:
+            self.stats.malicious_failed += 1
+        else:
+            self.stats.benign_failed += 1   # a genuine denial of a legitimate user
 
     # -- dispatcher: assigns waiting attempts to free servers ----------------
     def _dispatcher(self):

@@ -28,7 +28,7 @@ from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
 from runtime                    import host as sim_host, UP
-from sim.metrics                import resilience_multi, success_rate
+from sim.metrics                import resilience_multi, benign_success_rate, malicious_blocked_rate
 from policy_store               import load_knobs, save_knobs
 
 
@@ -174,9 +174,8 @@ async def run_episode(
         "intents_routed":      stats.intents_routed,
         "final_P":             round(final_P, 4),
         "per_storm_P":         per_storm,
-        "success_rate":        round(success_rate(
-                                   sim_stats.completed if sim_stats else 0,
-                                   sim_stats.failed if sim_stats else 0), 4),
+        "benign_success_rate":    round(benign_success_rate(sim_stats), 4) if sim_stats else 1.0,
+        "malicious_blocked_rate": round(malicious_blocked_rate(sim_stats), 4) if sim_stats else 0.0,
         "final_policy": {
             "malicious_drop_prob":  policy.malicious_drop_prob,
             "queue_hold_threshold": policy.queue_hold_threshold,

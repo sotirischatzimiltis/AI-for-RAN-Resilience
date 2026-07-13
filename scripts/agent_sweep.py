@@ -62,19 +62,21 @@ async def main(args: argparse.Namespace) -> None:
         )
         # deterministic Lyapunov baseline for the same seed
         lyap_p, _, _ = det_run_one(_LYAP_FACTORY, _LYAP_C0, args.scenario, seed)
-        rows.append((seed, report["final_P"], report["success_rate"],
-                     report["failed"], report["non_rt_errors"], lyap_p))
+        rows.append((seed, report["final_P"], report["benign_success_rate"],
+                     report["malicious_blocked_rate"], report["non_rt_errors"], lyap_p))
         per = report.get("per_storm_P", [])
         per_str = f"  per_storm={per}" if len(per) > 1 else ""
         print(f"[sweep] seed={seed}  agent_P={report['final_P']:.3f}  "
-              f"succ={report['success_rate']:.3f}  fail={report['failed']}  "
+              f"benign={report['benign_success_rate']:.3f}  "
+              f"blocked={report['malicious_blocked_rate']:.3f}  "
               f"non_rt_errors={report['non_rt_errors']}  "
               f"lyap_P={lyap_p:.3f}  lift={report['final_P'] - lyap_p:+.3f}{per_str}")
 
     elapsed = time.monotonic() - t0
 
     agent_ps = [r[1] for r in rows]
-    succs    = [r[2] for r in rows]
+    benigns  = [r[2] for r in rows]
+    blockeds = [r[3] for r in rows]
     lifts    = [r[1] - r[5] for r in rows]
     print("\n" + "=" * 64)
     print(f"AGENT SWEEP  ({args.scenario}, {len(seeds)} seeds, model={args.model})")
@@ -82,7 +84,8 @@ async def main(args: argparse.Namespace) -> None:
     print(f"  agent P      : {statistics.mean(agent_ps):.3f} ± "
           f"{statistics.pstdev(agent_ps) if len(agent_ps) > 1 else 0.0:.3f}  "
           f"(min {min(agent_ps):.3f}, max {max(agent_ps):.3f})")
-    print(f"  success rate : {statistics.mean(succs):.3f}")
+    print(f"  benign served: {statistics.mean(benigns):.3f}  (legit users)")
+    print(f"  botnet blockd: {statistics.mean(blockeds):.3f}  (attack denied)")
     print(f"  lift vs Lyap : {statistics.mean(lifts):+.3f} ± "
           f"{statistics.pstdev(lifts) if len(lifts) > 1 else 0.0:.3f}")
     print(f"  total errors : {sum(r[4] for r in rows)} Non-RT across all seeds")
