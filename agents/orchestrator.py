@@ -28,7 +28,7 @@ from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
 from runtime                    import host as sim_host, UP
-from sim.metrics                import resilience_score, success_rate
+from sim.metrics                import resilience_multi, success_rate
 from policy_store               import load_knobs, save_knobs
 
 
@@ -149,14 +149,17 @@ async def run_episode(
     wall_time = time.monotonic() - t_start
     sim_stats = sim_host.sim.stats if sim_host.sim else None
 
-    # Final A3RT resilience score, computed once at episode end (ground truth)
+    # Final A3RT resilience score, computed once at episode end (ground truth).
+    # Score every storm in the scenario against its own local baseline; final_P is
+    # the whole-episode aggregate (equals the single-storm score when there's one).
     final_P = 0.0
+    per_storm: list = []
     if sim_host.sim and len(sim_host.sim.telemetry) >= 4:
         try:
-            final_P = resilience_score(
-                sim_host.sim.telemetry, sim_host.sim.mu_single, UP,
-                t0=sim_host.t0, td=sim_host.td,
-            )["P"]
+            storms = sim_host.sim.cfg.traffic.storm_windows()
+            rm = resilience_multi(sim_host.sim.telemetry, sim_host.sim.mu_single, UP, storms)
+            final_P   = rm["P_episode"]
+            per_storm = [round(s["P"], 4) for s in rm["per_storm"]]
         except Exception:
             final_P = 0.0
 
@@ -170,6 +173,7 @@ async def run_episode(
         "non_rt_errors":       stats.non_rt_errors,
         "intents_routed":      stats.intents_routed,
         "final_P":             round(final_P, 4),
+        "per_storm_P":         per_storm,
         "success_rate":        round(success_rate(
                                    sim_stats.completed if sim_stats else 0,
                                    sim_stats.failed if sim_stats else 0), 4),

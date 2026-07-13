@@ -104,6 +104,27 @@ class TrafficConfig:
                 return p.benign_rate, p.botnet_rate
         return 0.0, 0.0
 
+    def storm_windows(self) -> list[tuple[float, float]]:
+        """(t0, td) windows for each distinct storm — phases with load elevated
+        above the benign baseline (higher benign rate or any botnet). Adjacent
+        elevated phases are merged into one storm.
+
+        single_storm -> [(50, 110)];  multi_storm -> [(60,120),(420,480),(780,840)].
+        """
+        if not self.phases:
+            return []
+        baseline = min(p.benign_rate for p in self.phases)
+        windows: list[tuple[float, float]] = []
+        for p in self.phases:
+            elevated = p.benign_rate > baseline or p.botnet_rate > 0
+            if not elevated:
+                continue
+            if windows and abs(p.t_start - windows[-1][1]) < 1e-9:
+                windows[-1] = (windows[-1][0], p.t_end)   # merge adjacent
+            else:
+                windows.append((p.t_start, p.t_end))
+        return windows
+
 
 # ---------------------------------------------------------------------------
 # Top-level simulation config

@@ -64,10 +64,12 @@ async def main(args: argparse.Namespace) -> None:
         lyap_p, _, _ = det_run_one(_LYAP_FACTORY, _LYAP_C0, args.scenario, seed)
         rows.append((seed, report["final_P"], report["success_rate"],
                      report["failed"], report["non_rt_errors"], lyap_p))
+        per = report.get("per_storm_P", [])
+        per_str = f"  per_storm={per}" if len(per) > 1 else ""
         print(f"[sweep] seed={seed}  agent_P={report['final_P']:.3f}  "
               f"succ={report['success_rate']:.3f}  fail={report['failed']}  "
               f"non_rt_errors={report['non_rt_errors']}  "
-              f"lyap_P={lyap_p:.3f}  lift={report['final_P'] - lyap_p:+.3f}")
+              f"lyap_P={lyap_p:.3f}  lift={report['final_P'] - lyap_p:+.3f}{per_str}")
 
     elapsed = time.monotonic() - t0
 

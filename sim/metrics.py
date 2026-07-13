@@ -109,13 +109,16 @@ def resilience_score(telemetry: Sequence[TelemetrySample],
     seg2 = [(t, u) for t, u in zip(ts, us) if td <= t <= tr]
 
     def _ratio(seg):
+        # Fraction of the DESIRED utility that was actually maintained over the
+        # segment, capped at 1.0: maintaining >= u_des is perfectly resilient, and
+        # over-provisioning above the pre-storm baseline must not earn P > 1.
         if len(seg) < 2:
             return 1.0
         xs = [t for t, _ in seg]
         ys = [u for _, u in seg]
         num = _trapz(ys, xs)
         den = u_des * (xs[-1] - xs[0])
-        return num / den if den > 0 else 1.0
+        return min(1.0, num / den) if den > 0 else 1.0
 
     absorption = _ratio(seg1)
     adaptation = _ratio(seg2)
@@ -131,3 +134,38 @@ def resilience_score(telemetry: Sequence[TelemetrySample],
         "tr": tr,
         "recovery_time": tr - t0,
     }
+
+
+def resilience_multi(telemetry: Sequence[TelemetrySample],
+                     mu_single: float,
+                     util_p: UtilityParams,
+                     storms: Sequence[tuple[float, float]],
+                     baseline_lookback_s: float = 50.0,
+                     weights: ResilienceWeights = ResilienceWeights()) -> dict:
+    """Per-storm resilience plus a whole-episode aggregate, for multi-storm runs.
+
+    Each storm (t0, td) is scored against its OWN local pre-storm baseline —
+    u_des = mean utility over [t0 - baseline_lookback_s, t0] — so storm 2 isn't
+    judged against storm 1's degraded state. This also captures the evolution
+    story: the per-storm P should climb as the agent tunes its posture.
+
+    The whole-episode P is the mean of the per-storm P (each storm weighted
+    equally). Falls back to the single-window score when there is one storm.
+
+    Returns {P_episode, per_storm: [{t0, td, P, absorption, adaptation, trec,
+    recovery_time}], n_storms}.
+    """
+    ts = [s.t for s in telemetry]
+    us = utility_series(telemetry, mu_single, util_p)
+
+    per = []
+    for (t0, td) in storms:
+        pre = [u for t, u in zip(ts, us) if t0 - baseline_lookback_s <= t < t0]
+        u_des = (sum(pre) / len(pre)) if pre else None   # None -> core auto-calibrates
+        r = resilience_score(telemetry, mu_single, util_p, t0=t0, td=td,
+                             u_des=u_des, weights=weights)
+        per.append({"t0": t0, "td": td, **{k: r[k] for k in
+                    ("P", "absorption", "adaptation", "trec", "recovery_time")}})
+
+    p_episode = sum(s["P"] for s in per) / len(per) if per else 0.0
+    return {"P_episode": p_episode, "per_storm": per, "n_storms": len(per)}

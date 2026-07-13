@@ -129,6 +129,8 @@ async def main(args: argparse.Namespace) -> None:
     print(f"  Non-RT errors          : {report['non_rt_errors']}")
     print(f"  Intents routed         : {report['intents_routed']}")
     print(f"  Final resilience P     : {report['final_P']:.4f}  (success rate {report['success_rate']:.3f})")
+    if len(report.get('per_storm_P', [])) > 1:
+        print(f"  Per-storm P            : {report['per_storm_P']}  (episode = mean)")
     print(f"  Completed UEs          : {report['completed']}")
     print(f"  Failed UEs             : {report['failed']}")
     print(f"  Retries                : {report['retries']}")

@@ -29,7 +29,7 @@ from sim.config import (
 )
 from sim.simulator import StormSim
 from sim.controllers import FixedController, LyapunovController, ForecastLyapunov
-from sim.metrics import UtilityParams, resilience_score, success_rate
+from sim.metrics import UtilityParams, resilience_multi, success_rate
 
 LQMAX = 1500.0
 UP    = UtilityParams(lq_max=LQMAX, kB=0.004)
@@ -59,9 +59,9 @@ def run_one(controller_factory, c0: int, scenario: str, seed: int) -> tuple[floa
     )
     sim = StormSim(cfg)
     sim.run(controller=controller_factory())
-    r = resilience_score(sim.telemetry, sim.mu_single, UP, t0=t0, td=td)
+    rm = resilience_multi(sim.telemetry, sim.mu_single, UP, sim.cfg.traffic.storm_windows())
     succ = success_rate(sim.stats.completed, sim.stats.failed)
-    return r["P"], sim.stats.failed, succ
+    return rm["P_episode"], sim.stats.failed, succ
 
 
 def sweep(scenario: str, seeds: list[int]) -> None:
