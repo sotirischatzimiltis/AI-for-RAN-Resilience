@@ -7,3 +7,13 @@ __pycache__/
 .DS_Store
 *.egg-info/
 .pytest_cache/
+
+# Experiment / analysis scripts + outputs — kept local, out of the framework repo for now
+scripts/agent_sweep.py
+scripts/seed_sweep.py
+scripts/learning_demo.py
+scripts/learning_curve.py
+scripts/make_results.py
+scripts/compare_baselines.py
+scripts/plot_compare.py
+results/

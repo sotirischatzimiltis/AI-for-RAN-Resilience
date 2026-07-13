@@ -1,7 +1,0 @@
-{
-  "scenario": "single_storm", "model": "openrouter:openai/gpt-4o-mini", "seeds": [1,2,3,4,5],
-  "agent_P_mean": 0.902, "agent_P_std": 0.006,
-  "lyap_P_mean": 0.834, "lift_mean": 0.068, "lift_std": 0.005,
-  "benign_mean": 1.000, "blocked_mean": 0.0,
-  "_note": "measured this session (agent_sweep single_storm, 5 seeds); no botnet in single_storm so blocked=0"
-}
