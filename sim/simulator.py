@@ -40,6 +40,8 @@ class TelemetrySample:
     failed: int = 0            # cumulative UEs that exhausted retries
     retries: int = 0           # cumulative retry events
     arrivals: int = 0          # cumulative attach attempts submitted (incl. retries)
+    malicious_arrivals: int = 0  # cumulative botnet UEs spawned
+    malicious_dropped: int = 0   # cumulative botnet UEs dropped at admission
 
 
 @dataclass
@@ -55,6 +57,7 @@ class Stats:
     # only the benign figures answer "did real users get service?".
     benign_completed:  int = 0
     benign_failed:     int = 0   # benign UE that exhausted its retries (genuine denial)
+    malicious_arrivals:int = 0   # botnet UEs spawned (per-UE, for per-storm blocked rate)
     malicious_dropped: int = 0   # botnet UE rejected at admission by the filter (desired)
     malicious_failed:  int = 0   # botnet UE that exhausted retries without being filtered
 
@@ -158,6 +161,8 @@ class StormSim:
 
     def _spawn_ue(self, malicious: bool):
         self._ue_counter += 1
+        if malicious:
+            self.stats.malicious_arrivals += 1
         self.env.process(self._ue_attach(self._ue_counter, malicious, t_arrival=self.env.now))
 
     # -- a single UE's attach lifecycle, with T300 timer and retries ---------
@@ -296,6 +301,8 @@ class StormSim:
                 failed=self.stats.failed,
                 retries=self.stats.retries,
                 arrivals=self.stats.arrivals,
+                malicious_arrivals=self.stats.malicious_arrivals,
+                malicious_dropped=self.stats.malicious_dropped,
             ))
             yield env.timeout(cfg.sample_dt_s)
 

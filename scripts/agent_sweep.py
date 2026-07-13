@@ -16,6 +16,7 @@ Usage (sources the shell env for the API key):
 
 import argparse
 import asyncio
+import json
 import logging
 import statistics
 import sys
@@ -92,6 +93,21 @@ async def main(args: argparse.Namespace) -> None:
     print(f"  wall time    : {elapsed:.0f}s")
     print("=" * 64)
 
+    if args.save:
+        out = Path(__file__).parent.parent / "results" / f"agent_{args.scenario}.json"
+        out.parent.mkdir(exist_ok=True)
+        out.write_text(json.dumps({
+            "scenario": args.scenario, "model": args.model, "seeds": seeds,
+            "agent_P_mean":  statistics.mean(agent_ps),
+            "agent_P_std":   statistics.pstdev(agent_ps) if len(agent_ps) > 1 else 0.0,
+            "lyap_P_mean":   statistics.mean(r[5] for r in rows),
+            "lift_mean":     statistics.mean(lifts),
+            "lift_std":      statistics.pstdev(lifts) if len(lifts) > 1 else 0.0,
+            "benign_mean":   statistics.mean(benigns),
+            "blocked_mean":  statistics.mean(blockeds),
+        }, indent=2))
+        print(f"  saved -> {out}")
+
     logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
     server_task.cancel()
     try:
@@ -108,5 +124,6 @@ if __name__ == "__main__":
     p.add_argument("--seeds", type=int, default=5)
     p.add_argument("--rt-factor", type=float, default=4.0, dest="rt_factor")
     p.add_argument("--assessment-interval", type=float, default=6.0, dest="assessment_interval")
+    p.add_argument("--save", action="store_true", help="cache results to results/agent_<scenario>.json")
     args = p.parse_args()
     asyncio.run(main(args))

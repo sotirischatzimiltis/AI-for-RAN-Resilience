@@ -25,6 +25,31 @@ def benign_success_rate(stats) -> float:
     return stats.benign_completed / served if served > 0 else 1.0
 
 
+def per_storm_blocked(telemetry, storms) -> list[float]:
+    """Fraction of botnet UEs dropped at admission DURING each storm window, from
+    the cumulative counters in telemetry. Shows within-episode learning: with the
+    fast loop primed, later storms are blocked harder than the first.
+
+    For each (t0, td): (dropped[td]-dropped[t0]) / (arrivals[td]-arrivals[t0]).
+    """
+    def at(t, field):
+        # last sample at or before t
+        val = 0
+        for s in telemetry:
+            if s.t <= t:
+                val = getattr(s, field)
+            else:
+                break
+        return val
+
+    out = []
+    for (t0, td) in storms:
+        d = at(td, "malicious_dropped") - at(t0, "malicious_dropped")
+        a = at(td, "malicious_arrivals") - at(t0, "malicious_arrivals")
+        out.append(round(d / a, 4) if a > 0 else 0.0)
+    return out
+
+
 def malicious_blocked_rate(stats) -> float:
     """Fraction of botnet UEs denied service (dropped at admission OR eventually
     failed): (malicious_dropped + malicious_failed) / all malicious outcomes.

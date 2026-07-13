@@ -18,6 +18,7 @@ Usage:
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 import time
@@ -65,31 +66,43 @@ async def main(args: argparse.Namespace) -> None:
     _clean()
     r = await _run(model, args.rt_factor, args.assessment_interval, learn=False)
     rows.append(("baseline (no learn)", r))
-    print(f"[demo] baseline           blocked={r['malicious_blocked_rate']:.3f}  "
-          f"benign={r['benign_success_rate']:.3f}  P={r['final_P']:.3f}")
+    print(f"[demo] baseline      blocked={r['malicious_blocked_rate']:.3f}  "
+          f"per_storm={r.get('per_storm_blocked')}  benign={r['benign_success_rate']:.3f}")
 
     # learning sequence from a clean slate
     _clean()
     for ep in range(1, args.episodes + 1):
         r = await _run(model, args.rt_factor, args.assessment_interval, learn=True)
         rows.append((f"learn episode {ep}", r))
-        sm = r.get("storm_memory") or {}
-        print(f"[demo] learn ep{ep}          blocked={r['malicious_blocked_rate']:.3f}  "
-              f"benign={r['benign_success_rate']:.3f}  P={r['final_P']:.3f}  "
-              f"(learned={sm.get('learned')}, storms_seen={sm.get('storms_seen')})")
+        print(f"[demo] learn ep{ep}     blocked={r['malicious_blocked_rate']:.3f}  "
+              f"per_storm={r.get('per_storm_blocked')}  benign={r['benign_success_rate']:.3f}")
 
     elapsed = time.monotonic() - t0
-    print("\n" + "=" * 68)
+    print("\n" + "=" * 74)
     print(f"LEARNING DEMO  (multi_storm, seed={SEED}, model={args.model})")
-    print("=" * 68)
-    print(f"{'run':22s}  {'blocked':>8s}  {'benign':>7s}  {'P':>6s}")
+    print("=" * 74)
+    print(f"{'run':22s}  {'blocked':>8s}  {'per-storm blocked':>22s}  {'benign':>7s}  {'P':>6s}")
     for label, r in rows:
-        print(f"{label:22s}  {r['malicious_blocked_rate']:8.3f}  "
+        ps = "[" + " ".join(f"{x:.2f}" for x in r.get("per_storm_blocked", [])) + "]"
+        print(f"{label:22s}  {r['malicious_blocked_rate']:8.3f}  {ps:>22s}  "
               f"{r['benign_success_rate']:7.3f}  {r['final_P']:6.3f}")
     print(f"\n  botnet blocked: baseline {rows[0][1]['malicious_blocked_rate']:.3f}  ->  "
           f"final {rows[-1][1]['malicious_blocked_rate']:.3f}")
     print(f"  wall time: {elapsed:.0f}s")
-    print("=" * 68)
+    print("=" * 74)
+
+    # cache results for the figures/table script
+    if args.save:
+        out = Path(__file__).parent.parent / "results" / "learning_demo.json"
+        out.parent.mkdir(exist_ok=True)
+        payload = {"scenario": "multi_storm", "seed": SEED, "model": args.model,
+                   "runs": [{"label": label,
+                             "blocked": r["malicious_blocked_rate"],
+                             "per_storm_blocked": r.get("per_storm_blocked", []),
+                             "benign": r["benign_success_rate"],
+                             "P": r["final_P"]} for label, r in rows]}
+        out.write_text(json.dumps(payload, indent=2))
+        print(f"  saved -> {out}")
 
     logging.getLogger("uvicorn.error").setLevel(logging.CRITICAL)
     server_task.cancel()
@@ -105,5 +118,6 @@ if __name__ == "__main__":
     p.add_argument("--episodes", type=int, default=3)
     p.add_argument("--rt-factor", type=float, default=6.0, dest="rt_factor")
     p.add_argument("--assessment-interval", type=float, default=8.0, dest="assessment_interval")
+    p.add_argument("--save", action="store_true", help="cache results to results/learning_demo.json")
     args = p.parse_args()
     asyncio.run(main(args))

@@ -28,7 +28,8 @@ from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
 from runtime                    import host as sim_host, UP
-from sim.metrics                import resilience_multi, benign_success_rate, malicious_blocked_rate
+from sim.metrics                import (resilience_multi, benign_success_rate,
+                                        malicious_blocked_rate, per_storm_blocked)
 from policy_store               import load_knobs, save_knobs, load_storm_memory, save_storm_memory
 from storm_memory               import StormMemory
 
@@ -175,14 +176,17 @@ async def run_episode(
     # the whole-episode aggregate (equals the single-storm score when there's one).
     final_P = 0.0
     per_storm: list = []
+    per_storm_block: list = []
     if sim_host.sim and len(sim_host.sim.telemetry) >= 4:
         try:
             storms = sim_host.sim.cfg.traffic.storm_windows()
             rm = resilience_multi(sim_host.sim.telemetry, sim_host.sim.mu_single, UP, storms)
             final_P   = rm["P_episode"]
             per_storm = [round(s["P"], 4) for s in rm["per_storm"]]
+            per_storm_block = per_storm_blocked(sim_host.sim.telemetry, storms)
         except Exception:
             final_P = 0.0
+            per_storm_block = []
 
     return {
         "scenario":            scenario,
@@ -195,6 +199,7 @@ async def run_episode(
         "intents_routed":      stats.intents_routed,
         "final_P":             round(final_P, 4),
         "per_storm_P":         per_storm,
+        "per_storm_blocked":   per_storm_block,
         "benign_success_rate":    round(benign_success_rate(sim_stats), 4) if sim_stats else 1.0,
         "malicious_blocked_rate": round(malicious_blocked_rate(sim_stats), 4) if sim_stats else 0.0,
         "final_policy": {
