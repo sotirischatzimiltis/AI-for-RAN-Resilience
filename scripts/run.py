@@ -116,6 +116,8 @@ async def main(args: argparse.Namespace) -> None:
         t_post=args.t_post,
         calendar=calendar,
         persist_knobs=args.persist_knobs,
+        learn_within=args.learn_within,
+        learn_across=args.learn_across,
     )
     elapsed = time.monotonic() - t0
 
@@ -167,5 +169,9 @@ if __name__ == "__main__":
                         help="sim time (s) of a scheduled mass event on the calendar (e.g. 50 = storm onset)")
     parser.add_argument("--persist-knobs",       action="store_true", dest="persist_knobs",
                         help="carry the Non-RT judge's tuned knobs (queue_hold, V, W) across episodes")
+    parser.add_argument("--learn-within",        action="store_true", dest="learn_within",
+                        help="fast loop learns the storm signature and auto-engages the filter on later storms")
+    parser.add_argument("--learn-across",        action="store_true", dest="learn_across",
+                        help="persist the learned storm signature so the next episode starts primed")
     args = parser.parse_args()
     asyncio.run(main(args))

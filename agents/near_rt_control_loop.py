@@ -21,6 +21,7 @@ def apply_decision(
     queue_hold_threshold: int = 10,
     current_lam:          float = 0.0,
     release_lam_ceiling:  float | None = None,
+    memory=None,
 ) -> tuple[int, float, bool]:
     """
     Clamp the proposed servers + policy-gated drop against the safety rules, apply
@@ -48,15 +49,24 @@ def apply_decision(
     else:
         applied_c = proposed_c
 
-    # --- absorption lever: drop probability (policy-gated + release valve) ---
-    # Release the filter if load is clearly benign, even if the (possibly stale)
-    # policy still says storm_active — reactive protection of recovery traffic.
+    # --- absorption lever: drop probability ---
+    # Release valve: drop nothing if load is clearly benign, even if the (possibly
+    # stale) policy still says storm_active — protects recovery traffic.
     released = (
-        storm_active
-        and release_lam_ceiling is not None
+        release_lam_ceiling is not None
         and current_lam <= release_lam_ceiling
     )
-    applied_drop = malicious_drop_prob if (storm_active and not released) else 0.0
+    # Learned auto-engage: once the fast loop knows the storm signature it engages
+    # the filter itself, without waiting on the slow LLM verdict.
+    auto_engage = memory is not None and memory.should_engage(current_lam)
+    if released:
+        applied_drop = 0.0
+    elif auto_engage:
+        applied_drop = memory.storm_drop_level
+    elif storm_active:
+        applied_drop = malicious_drop_prob
+    else:
+        applied_drop = 0.0
 
     acted = (applied_c != current_c) or (abs(applied_drop - current_drop) > 1e-9)
     sim.set_servers(applied_c)
@@ -69,6 +79,7 @@ async def run_control_loop(
     stop_event:    asyncio.Event,
     poll_interval: float = 1.0,
     stats:         EpisodeStats | None = None,
+    memory=None,
 ) -> None:
     """
     Deterministic 1 Hz control loop
@@ -76,8 +87,13 @@ async def run_control_loop(
       1. read latest telemetry from the sim,
       2. compute c_star (Lyapunov drift-plus-penalty) in Python,
       3. read the atomic policy snapshot (storm_active, malicious_drop_prob),
-      4. apply a clamped action (capacity reactive; drop gated by storm_active),
-      5. sleep to the next tick (waking early when the episode ends).
+      4. (optional) update the learned storm signature from telemetry,
+      5. apply a clamped action (capacity reactive; drop gated by storm_active
+         or the learned auto-engage),
+      6. sleep to the next tick (waking early when the episode ends).
+
+    `memory` (StormMemory | None): when present, the loop learns the storm
+    signature and may auto-engage the filter ahead of the LLM verdict.
     """
     step = 0
     while not stop_event.is_set():
@@ -99,6 +115,10 @@ async def run_control_loop(
             benign_baseline = min(p.benign_rate for p in sim.cfg.traffic.phases)
             release_ceiling = benign_baseline * BENIGN_LAM_FACTOR
 
+            # update the learned storm signature (within-episode learning)
+            if memory is not None and memory.learn_within:
+                memory.observe(s.lam_current, pol.storm_active)
+
             applied_c, applied_drop, acted = apply_decision(
                 sim,
                 pol.storm_active,
@@ -107,16 +127,17 @@ async def run_control_loop(
                 pol.queue_hold_threshold,
                 current_lam=s.lam_current,
                 release_lam_ceiling=release_ceiling,
+                memory=memory,
             )
 
             marker   = "✦" if acted else "·"
-            released = pol.storm_active and applied_drop == 0.0 and pol.malicious_drop_prob > 0.0
-            valve    = "  [valve: drop released]" if released else ""
+            auto     = memory is not None and memory.should_engage(s.lam_current) and not pol.storm_active
+            tag      = "  [auto-engage: learned]" if auto else ""
             print(
                 f"[Fast] {marker} step={step:3d}  t={s.t:5.1f}s  "
                 f"lam={s.lam_current:5.0f}  q={s.queue_len:4d}  "
                 f"c={applied_c:2d} (c*={c_star:2d})  drop={applied_drop:.2f}  "
-                f"storm={pol.storm_active}  acted={acted}{valve}"
+                f"storm={pol.storm_active}  acted={acted}{tag}"
             )
 
         # sleep poll_interval; wake immediately if the episode ends

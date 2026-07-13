@@ -1,5 +1,6 @@
 .venv/
 .policy_state.json
+.storm_memory.json
 __pycache__/
 *.pyc
 *.pyo

@@ -29,7 +29,8 @@ from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
 from agents.policy              import SharedPolicy, EpisodeStats
 from runtime                    import host as sim_host, UP
 from sim.metrics                import resilience_multi, benign_success_rate, malicious_blocked_rate
-from policy_store               import load_knobs, save_knobs
+from policy_store               import load_knobs, save_knobs, load_storm_memory, save_storm_memory
+from storm_memory               import StormMemory
 
 
 # ---------------------------------------------------------------------------
@@ -72,6 +73,8 @@ async def run_episode(
     calendar: list | None = None,
     intents: list[tuple[float, str, str]] | None = None,
     persist_knobs:         bool = False,
+    learn_within:          bool = False,
+    learn_across:          bool = False,
 ) -> dict:
     """
     Run one full episode with autonomous Near-RT and Non-RT loops.
@@ -97,6 +100,18 @@ async def run_episode(
     if knobs:
         print(f"[Orchestrator] Loaded persisted knobs: {knobs}")
     stats   = EpisodeStats()
+
+    # Learned storm signature for the fast loop (auto-engage the filter).
+    memory = None
+    if learn_within or learn_across:
+        memory = StormMemory(learn_within=learn_within, learn_across=learn_across)
+        if learn_across:
+            sig = load_storm_memory()
+            if sig:
+                for k, v in sig.items():
+                    setattr(memory, k, v)
+                print(f"[Orchestrator] Loaded storm signature: learned={memory.learned}, "
+                      f"engage>{memory.engage_threshold}, storms_seen={memory.storms_seen}")
 
     # Publish the operator calendar so the get_calendar MCP tool can read it
     sim_host.calendar = calendar or []
@@ -127,7 +142,7 @@ async def run_episode(
     tasks = [
         asyncio.create_task(_watch_episode()),
         asyncio.create_task(
-            run_control_loop(policy, stop_event, poll_interval_s, stats)
+            run_control_loop(policy, stop_event, poll_interval_s, stats, memory)
         ),
         asyncio.create_task(
             run_assessment_loop(non_rt, policy, stop_event, assessment_interval_s, stats)
@@ -145,6 +160,12 @@ async def run_episode(
         print(f"[Orchestrator] Persisted knobs for next episode: "
               f"queue_hold={policy.queue_hold_threshold}, "
               f"V={policy.lyapunov_V:.0f}, W={policy.lyapunov_W:.2f}")
+
+    # Carry the learned storm signature into the next episode (across-episode learning).
+    if memory is not None and learn_across:
+        save_storm_memory(memory)
+        print(f"[Orchestrator] Persisted storm signature: learned={memory.learned}, "
+              f"engage>{memory.engage_threshold}, storms_seen={memory.storms_seen}")
 
     wall_time = time.monotonic() - t_start
     sim_stats = sim_host.sim.stats if sim_host.sim else None
@@ -185,4 +206,9 @@ async def run_episode(
         "completed": sim_stats.completed if sim_stats else 0,
         "failed":    sim_stats.failed    if sim_stats else 0,
         "retries":   sim_stats.retries   if sim_stats else 0,
+        "storm_memory": {
+            "learned":          memory.learned,
+            "engage_threshold": memory.engage_threshold,
+            "storms_seen":      memory.storms_seen,
+        } if memory is not None else None,
     }

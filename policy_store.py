@@ -17,7 +17,11 @@ from pathlib import Path
 # Only the slow knobs persist.
 _KNOBS = ("queue_hold_threshold", "lyapunov_V", "lyapunov_W")
 
-DEFAULT_PATH = Path(__file__).parent / ".policy_state.json"
+DEFAULT_PATH        = Path(__file__).parent / ".policy_state.json"
+STORM_MEMORY_PATH   = Path(__file__).parent / ".storm_memory.json"
+# fields of the learned storm signature that persist across episodes
+_MEMORY_FIELDS = ("baseline_lam", "engage_threshold", "storm_drop_level",
+                  "storms_seen", "learned")
 
 
 def load_knobs(path: str | Path = DEFAULT_PATH) -> dict | None:
@@ -41,4 +45,22 @@ def save_knobs(policy, path: str | Path = DEFAULT_PATH) -> None:
         "lyapunov_V":           float(view.lyapunov_V),
         "lyapunov_W":           float(view.lyapunov_W),
     }
+    Path(path).write_text(json.dumps(data, indent=2))
+
+
+def load_storm_memory(path: str | Path = STORM_MEMORY_PATH) -> dict | None:
+    """Return the persisted storm-signature fields, or None if absent/unreadable."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text())
+        return {k: data[k] for k in _MEMORY_FIELDS if k in data} or None
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def save_storm_memory(memory, path: str | Path = STORM_MEMORY_PATH) -> None:
+    """Persist a StormMemory's learned signature (not the toggles)."""
+    data = {k: getattr(memory, k) for k in _MEMORY_FIELDS}
     Path(path).write_text(json.dumps(data, indent=2))
