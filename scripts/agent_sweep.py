@@ -33,6 +33,10 @@ from scripts.seed_sweep import run_one as det_run_one, CONTROLLERS
 # deterministic baseline the agent is measured against
 _LYAP_FACTORY, _LYAP_C0 = CONTROLLERS["Lyapunov V=1000"]
 
+# per-scenario: sim time of the first storm onset (for the calendar event) and
+# whether t_post applies (single-storm only)
+_SCENARIO_ONSET = {"single_storm": 50.0, "multi_storm": 60.0}
+
 
 async def main(args: argparse.Namespace) -> None:
     model = resolve_model(args.model)
@@ -43,19 +47,21 @@ async def main(args: argparse.Namespace) -> None:
     )
     await asyncio.sleep(1.5)
 
+    onset  = _SCENARIO_ONSET[args.scenario]
+    t_post = 20.0 if args.scenario == "single_storm" else None  # multi-storm horizon is fixed
     seeds = list(range(1, args.seeds + 1))
     rows = []
     t0 = time.monotonic()
     for seed in seeds:
-        calendar = [ScheduledEvent(t_start=50.0, name="scheduled mass event", severity="high")]
+        calendar = [ScheduledEvent(t_start=onset, name="scheduled mass event", severity="high")]
         report = await run_episode(
-            model=model, scenario="single_storm", seed=seed, c_max=16,
+            model=model, scenario=args.scenario, seed=seed, c_max=16,
             rt_factor=args.rt_factor, poll_interval_s=1.0,
-            assessment_interval_s=args.assessment_interval, t_post=20.0,
+            assessment_interval_s=args.assessment_interval, t_post=t_post,
             calendar=calendar,
         )
         # deterministic Lyapunov baseline for the same seed
-        lyap_p, _, _ = det_run_one(_LYAP_FACTORY, _LYAP_C0, "single_storm", seed)
+        lyap_p, _, _ = det_run_one(_LYAP_FACTORY, _LYAP_C0, args.scenario, seed)
         rows.append((seed, report["final_P"], report["success_rate"],
                      report["failed"], report["non_rt_errors"], lyap_p))
         print(f"[sweep] seed={seed}  agent_P={report['final_P']:.3f}  "
@@ -69,7 +75,7 @@ async def main(args: argparse.Namespace) -> None:
     succs    = [r[2] for r in rows]
     lifts    = [r[1] - r[5] for r in rows]
     print("\n" + "=" * 64)
-    print(f"AGENT SWEEP  ({len(seeds)} seeds, model={args.model})")
+    print(f"AGENT SWEEP  ({args.scenario}, {len(seeds)} seeds, model={args.model})")
     print("=" * 64)
     print(f"  agent P      : {statistics.mean(agent_ps):.3f} ± "
           f"{statistics.pstdev(agent_ps) if len(agent_ps) > 1 else 0.0:.3f}  "
@@ -92,6 +98,8 @@ async def main(args: argparse.Namespace) -> None:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Live-agent seed sweep vs deterministic baseline")
     p.add_argument("--model", default="openrouter:openai/gpt-4o-mini")
+    p.add_argument("--scenario", default="single_storm",
+                   choices=["single_storm", "multi_storm"])
     p.add_argument("--seeds", type=int, default=5)
     p.add_argument("--rt-factor", type=float, default=4.0, dest="rt_factor")
     p.add_argument("--assessment-interval", type=float, default=6.0, dest="assessment_interval")
