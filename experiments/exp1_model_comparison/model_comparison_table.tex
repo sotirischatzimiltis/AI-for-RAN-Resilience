@@ -1,0 +1,17 @@
+\begin{table}[t]
+\centering
+\caption{LLM storm-judge comparison on \texttt{multi\_storm\_flat} (5 seeds, bare judge). Resilience $P$ is capacity-bound and does not separate models; the judge is compared on botnet-blocked rate. Benign-served is $1.000$ for all (the filter is botnet-targeted).}
+\label{tab:model_bakeoff}
+\begin{tabular}{llccccc}
+\toprule
+Model & Rsn & Blocked $\uparrow$ & $P$ & \$/ep & Lat (s) & Err \\
+\midrule
+gemini-3.1-flash-lite & n/a & $0.799\pm0.037$ & $0.835$ & 0.0872 & 2.0 & 0 \\
+gpt-5.4-mini & off & $0.778\pm0.048$ & $0.835$ & 0.2223 & 3.1 & 0 \\
+gpt-4o-mini & n/a & $0.745\pm0.056$ & $0.836$ & 0.0435 & 2.4 & 2 \\
+claude-haiku-4.5 & n/a & $0.688\pm0.043$ & $0.836$ & 0.4163 & 3.5 & 0 \\
+qwen3.7-plus & off & $0.687\pm0.064$ & $0.836$ & 0.0981 & 4.0 & 0 \\
+gpt-5.4-mini & on & $0.658\pm0.025$ & $0.836$ & 0.2299 & 7.5 & 0 \\
+\bottomrule
+\end{tabular}
+\end{table}

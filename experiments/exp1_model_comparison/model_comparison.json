@@ -1,0 +1,213 @@
+{
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "scenarios": [
+    "multi_storm_flat",
+    "single_storm"
+  ],
+  "models": {
+    "openrouter:openai/gpt-5.4-mini::reasoning=on": {
+      "tier": "mid",
+      "reasoning": "on",
+      "slug": "openrouter:openai/gpt-5.4-mini",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.8334,
+          "P_std": 0.0002190890230020423,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 0,
+          "in_tokens_mean": 41074.6,
+          "out_tokens_mean": 6646.2,
+          "usd_per_episode": 0.06071384999999999,
+          "mean_latency_s": 8.196,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.83604,
+          "P_std": 0.0012862348152650877,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.65808,
+          "errors_total": 0,
+          "in_tokens_mean": 159103.6,
+          "out_tokens_mean": 24571.6,
+          "usd_per_episode": 0.22989990000000002,
+          "mean_latency_s": 7.526,
+          "blocked_std": 0.0246,
+          "benign_std": 0.0
+        }
+      }
+    },
+    "openrouter:openai/gpt-5.4-mini::reasoning=off": {
+      "tier": "mid",
+      "reasoning": "off",
+      "slug": "openrouter:openai/gpt-5.4-mini",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.8375,
+          "P_std": 0.004509988913511862,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 0,
+          "in_tokens_mean": 64667.8,
+          "out_tokens_mean": 2290.2,
+          "usd_per_episode": 0.058806750000000005,
+          "mean_latency_s": 3.022,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.83482,
+          "P_std": 0.0012188519188154347,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.77802,
+          "errors_total": 0,
+          "in_tokens_mean": 244391.8,
+          "out_tokens_mean": 8662,
+          "usd_per_episode": 0.22227284999999997,
+          "mean_latency_s": 3.068,
+          "blocked_std": 0.0482,
+          "benign_std": 0.0
+        }
+      }
+    },
+    "openrouter:google/gemini-3.1-flash-lite": {
+      "tier": "small",
+      "reasoning": "n/a",
+      "slug": "openrouter:google/gemini-3.1-flash-lite",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.83496,
+          "P_std": 0.0019126944345608436,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 0,
+          "in_tokens_mean": 84471.6,
+          "out_tokens_mean": 1891.6,
+          "usd_per_episode": 0.023955300000000002,
+          "mean_latency_s": 1.668,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.83494,
+          "P_std": 0.0011959933110181151,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.79938,
+          "errors_total": 0,
+          "in_tokens_mean": 307547.8,
+          "out_tokens_mean": 6857.4,
+          "usd_per_episode": 0.08717304999999999,
+          "mean_latency_s": 1.964,
+          "blocked_std": 0.0375,
+          "benign_std": 0.0
+        }
+      }
+    },
+    "openrouter:qwen/qwen3.7-plus": {
+      "tier": "small",
+      "reasoning": "off",
+      "slug": "openrouter:qwen/qwen3.7-plus",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.83348,
+          "P_std": 0.0002135415650406027,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 0,
+          "in_tokens_mean": 74334,
+          "out_tokens_mean": 2082.6,
+          "usd_per_episode": 0.026452608,
+          "mean_latency_s": 3.9299999999999997,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.8357800000000001,
+          "P_std": 0.0010943491216243684,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.6873600000000001,
+          "errors_total": 0,
+          "in_tokens_mean": 276495.8,
+          "out_tokens_mean": 7555.6,
+          "usd_per_episode": 0.09814982400000001,
+          "mean_latency_s": 3.99,
+          "blocked_std": 0.0637,
+          "benign_std": 0.0
+        }
+      }
+    },
+    "openrouter:openai/gpt-4o-mini": {
+      "tier": "small",
+      "reasoning": "n/a",
+      "slug": "openrouter:openai/gpt-4o-mini",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.8342,
+          "P_std": 0.001559487095169439,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 3,
+          "in_tokens_mean": 67279.6,
+          "out_tokens_mean": 1446.4,
+          "usd_per_episode": 0.01095978,
+          "mean_latency_s": 2.406,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.8359800000000001,
+          "P_std": 0.001074057726567817,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.74542,
+          "errors_total": 2,
+          "in_tokens_mean": 267593.6,
+          "out_tokens_mean": 5576,
+          "usd_per_episode": 0.04348463999999999,
+          "mean_latency_s": 2.392,
+          "blocked_std": 0.0558,
+          "benign_std": 0.0
+        }
+      }
+    },
+    "openrouter:anthropic/claude-haiku-4.5": {
+      "tier": "mid",
+      "reasoning": "n/a",
+      "slug": "openrouter:anthropic/claude-haiku-4.5",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.8337,
+          "P_std": 0.00022803508501980247,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.0,
+          "errors_total": 0,
+          "in_tokens_mean": 93530,
+          "out_tokens_mean": 3023.2,
+          "usd_per_episode": 0.108646,
+          "mean_latency_s": 3.552,
+          "blocked_std": 0.0,
+          "benign_std": 0.0
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.8363,
+          "P_std": 0.0018253766734567449,
+          "benign_mean": 1.0,
+          "blocked_mean": 0.6879,
+          "errors_total": 0,
+          "in_tokens_mean": 359159.4,
+          "out_tokens_mean": 11429.4,
+          "usd_per_episode": 0.4163064,
+          "mean_latency_s": 3.452,
+          "blocked_std": 0.0434,
+          "benign_std": 0.0
+        }
+      }
+    }
+  }
+}
