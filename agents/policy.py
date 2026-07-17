@@ -164,3 +164,8 @@ class EpisodeStats:
     non_rt_assessments: int = 0
     non_rt_errors:      int = 0
     intents_routed:     int = 0
+    # LLM usage / cost accounting (accumulated across all assessments + intents)
+    llm_requests:       int   = 0
+    llm_input_tokens:   int   = 0
+    llm_output_tokens:  int   = 0
+    llm_latency_s:      float = 0.0   # cumulative wall time spent in agent.run()

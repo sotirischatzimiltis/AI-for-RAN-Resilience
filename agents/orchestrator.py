@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from agents.near_rt_control_loop import run_control_loop
-from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop
+from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop, _accumulate_usage
 from agents.policy              import SharedPolicy, EpisodeStats
 from event_calendar             import ScheduledEvent
 from runtime                    import host as sim_host, UP
@@ -99,7 +99,10 @@ async def route_intent(
         stats.intents_routed += 1
 
     print(f"[Orchestrator] Operator intent: {intent}")
+    _t0 = time.monotonic()
     result = await orchestrator.run(f"Operator intent: {intent}\nCurrent {policy.context_str()}")
+    if stats:
+        _accumulate_usage(stats, result, time.monotonic() - _t0)
     d = result.output
     actions = []
 
@@ -147,6 +150,11 @@ async def run_episode(
     persist_knobs:         bool = False,
     learn_within:          bool = False,
     learn_across:          bool = False,
+    no_forecast:           bool = False,
+    no_calendar:           bool = False,
+    no_release_valve:      bool = False,
+    compute_kappa:         float | None = None,
+    provision_delay:       float = 0.0,
 ) -> dict:
     """
     Run one full episode with autonomous Near-RT and Non-RT loops.
@@ -188,9 +196,17 @@ async def run_episode(
 
     # Publish the operator calendar so the get_calendar MCP tool can read it
     sim_host.calendar = calendar or []
+    # Ablation gates for the anticipation MCP tools (read by the MCP server)
+    sim_host.forecast_enabled = not no_forecast
+    sim_host.calendar_enabled = not no_calendar
+    if no_forecast or no_calendar or no_release_valve:
+        off = [n for n, f in (("forecast", no_forecast), ("calendar", no_calendar),
+                              ("release-valve", no_release_valve)) if f]
+        print(f"[Orchestrator] Ablation: disabled {', '.join(off)}")
 
     # Start simulator
-    msg = sim_host.start(scenario=scenario, seed=seed, c_max=c_max, rt_factor=rt_factor, t_post=t_post)
+    msg = sim_host.start(scenario=scenario, seed=seed, c_max=c_max, rt_factor=rt_factor,
+                         t_post=t_post, compute_kappa=compute_kappa, provision_delay=provision_delay)
     print(f"[Orchestrator] {msg}")
 
     # Event that signals both loops to stop
@@ -215,7 +231,8 @@ async def run_episode(
     tasks = [
         asyncio.create_task(_watch_episode()),
         asyncio.create_task(
-            run_control_loop(policy, stop_event, poll_interval_s, stats, memory)
+            run_control_loop(policy, stop_event, poll_interval_s, stats, memory,
+                             release_valve=not no_release_valve)
         ),
         asyncio.create_task(
             run_assessment_loop(non_rt, policy, stop_event, assessment_interval_s, stats)
@@ -269,6 +286,11 @@ async def run_episode(
         "non_rt_assessments":  stats.non_rt_assessments,
         "non_rt_errors":       stats.non_rt_errors,
         "intents_routed":      stats.intents_routed,
+        "llm_requests":        stats.llm_requests,
+        "llm_input_tokens":    stats.llm_input_tokens,
+        "llm_output_tokens":   stats.llm_output_tokens,
+        "llm_latency_s":       round(stats.llm_latency_s, 2),
+        "mean_assessment_latency_s": round(stats.llm_latency_s / max(1, stats.non_rt_assessments), 2),
         "final_P":             round(final_P, 4),
         "per_storm_P":         per_storm,
         "per_storm_blocked":   per_storm_block,

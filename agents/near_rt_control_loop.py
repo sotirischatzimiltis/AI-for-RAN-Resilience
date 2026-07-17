@@ -83,6 +83,7 @@ async def run_control_loop(
     poll_interval: float = 1.0,
     stats:         EpisodeStats | None = None,
     memory=None,
+    release_valve: bool = True,
 ) -> None:
     """
     Deterministic 1 Hz control loop
@@ -114,9 +115,14 @@ async def run_control_loop(
                 V=pol.lyapunov_V, W=pol.lyapunov_W,
             )
 
-            # release-valve ceiling, derived from the scenario's benign baseline
-            benign_baseline = min(p.benign_rate for p in sim.cfg.traffic.phases)
-            release_ceiling = benign_baseline * BENIGN_LAM_FACTOR
+            # release-valve ceiling, derived from the scenario's benign baseline.
+            # Ablated (release_valve=False) → None disables the code-side release,
+            # so the filter only disengages on the LLM's next storm_active=False.
+            if release_valve:
+                benign_baseline = min(p.benign_rate for p in sim.cfg.traffic.phases)
+                release_ceiling = benign_baseline * BENIGN_LAM_FACTOR
+            else:
+                release_ceiling = None
 
             # update the learned storm signature (within-episode learning)
             if memory is not None and memory.learn_within:

@@ -40,6 +40,15 @@ MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
 # while still well under a true runaway.
 ASSESSMENT_LIMITS = UsageLimits(request_limit=10, tool_calls_limit=8)
 
+# Per-HTTP-request timeout, provider-native via pydantic-ai model settings — flows to
+# the OpenAI/httpx client OpenRouter uses, so a hung connection fails here instead of
+# waiting out the client's ~600s default (which was blocking whole episodes: observed
+# 3 stalls of ~600s in one sweep). Well above normal use (<=~26s even for reasoning
+# models); a timed-out request is counted as an error and the assessment is skipped.
+# NOTE: if per-request timeouts still stack across tool-call retries and an episode
+# stalls, wrap the agent.run() below in an asyncio.wait_for(...) total backstop.
+REQUEST_TIMEOUT_S = 60.0
+
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
 
@@ -47,7 +56,9 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
 class PolicyUpdate(BaseModel):
     storm_active:         bool  = Field(description="True if a signaling storm is active RIGHT NOW")
     malicious_drop_prob:  float = Field(ge=0.0, le=1.0,
-                                        description="Malicious-drop probability to apply while the storm is active (0.0 when not)")
+                                        description="Malicious-drop probability while a storm is active — YOUR calibrated "
+                                                    "choice in (0,1], scaled to overload severity and whether filtering is "
+                                                    "already containing it (see FILTER STRENGTH). 0.0 when no storm.")
     queue_hold_threshold: int   = Field(ge=1, le=1000, default=10,
                                         description="Queue length below which the fast loop may scale servers "
                                                     "down; higher holds capacity longer during drain. Applied "
@@ -64,13 +75,13 @@ class PolicyUpdate(BaseModel):
     reasoning:            str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
 
-def build_non_rt_agent(model) -> Agent:
+def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
     toolset = MCPServerStreamableHTTP(MCP_URL)
     return Agent(
         model=model,
         output_type=PolicyUpdate,
         toolsets=[toolset],
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=system_prompt or SYSTEM_PROMPT,
     )
 
 
@@ -121,9 +132,19 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
         bins.append(str(round(sum(vals) / len(vals))) if vals else "-")
     traj = " ".join(bins)
 
+    # Resting baseline from the FULL history so far (not just the window): a low
+    # percentile of every arrival-rate sample. Calm periods dominate the episode, so
+    # this tracks the true resting level and stays valid even when the current window
+    # is entirely inside a storm — where there is no local calm stretch to read rest
+    # from. Gives the (stateless) judge a rest reference mid-storm.
+    all_lam  = sorted(s.lam_current for s in telemetry)
+    baseline = all_lam[max(0, int(0.25 * (len(all_lam) - 1)))]
+
     return (
         f"Window: last {t1 - t0:.0f}s ({len(win)} samples), now t={t_now:.0f}s\n"
         f"  >>> LATEST lam = {lam1:.0f} UEs/s  (this is NOW; your storm verdict keys on this)\n"
+        f"  resting lam (calm baseline over the whole episode so far): ~{baseline:.0f} UEs/s  "
+        f"[the reference for 'rest' — valid even if this window has no calm]\n"
         f"  arrival-rate lam over window: {lam0:.0f} -> {lam1:.0f} UEs/s ({lam_dir}); "
         f"peak was {peak.lam_current:.0f} at t={peak.t:.0f}s ({since_peak:.0f}s ago, already past)  [LEADING]\n"
         f"  lam trajectory (bin means): {traj}\n"
@@ -132,32 +153,65 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     )
 
 
+def _accumulate_usage(stats: EpisodeStats, result, elapsed: float) -> None:
+    """Fold one agent.run()'s token usage + wall latency into the episode stats.
+    Defensive across pydantic-ai usage-field names (input/output vs request/response)."""
+    stats.llm_latency_s += elapsed
+    try:
+        u = result.usage()
+    except Exception:
+        return
+    inp = getattr(u, "input_tokens", None)
+    if inp is None:
+        inp = getattr(u, "request_tokens", 0) or 0
+    out = getattr(u, "output_tokens", None)
+    if out is None:
+        out = getattr(u, "response_tokens", 0) or 0
+    stats.llm_requests      += getattr(u, "requests", 1) or 1
+    stats.llm_input_tokens  += int(inp)
+    stats.llm_output_tokens += int(out)
+
+
 async def _do_assessment(
     agent:      Agent,
     policy:     SharedPolicy,
     assessment: int,
     stats:      EpisodeStats | None,
+    window_s:   float = 40.0,
 ) -> None:
     t0     = time.monotonic()
-    window = summarize_window(sim_host.sim.telemetry) if sim_host.sim else "No sim running."
+    window = summarize_window(sim_host.sim.telemetry, window_s=window_s) if sim_host.sim else "No sim running."
 
     note = policy.get_operator_note()
     note_line = (f"\nOPERATOR INSTRUCTION (from the network operator, honour it): {note}\n"
                  if note else "")
 
+    # Only instruct the model to call the tools that are actually enabled. When the
+    # anticipation tools are ablated (bare-judge bake-off, or --no-forecast/--no-calendar)
+    # they return "disabled", so naming them here would just waste tool calls/tokens.
+    tools = ["get_episode_stats for the cumulative resilience (P, absorption, adaptation)"]
+    if getattr(sim_host, "calendar_enabled", True):
+        tools.append("get_calendar for scheduled load events")
+    if getattr(sim_host, "forecast_enabled", True):
+        tools.append("get_forecast for the short-term prediction of where load is heading")
+    tool_line = "Call " + ", ".join(tools) + "."
+
     prompt = (
         f"Assessment #{assessment}. {policy.context_str()}\n"
         f"Recent telemetry window:\n{window}\n"
         f"{note_line}"
-        "Call get_episode_stats for the cumulative resilience (P, absorption, adaptation), "
-        "get_calendar for scheduled load events, and get_forecast for the short-term "
-        "prediction of where load is heading. Then judge storm-vs-noise from the window "
+        f"{tool_line} Then judge storm-vs-noise from the window "
         "trends and return a PolicyUpdate."
     )
     try:
-        result  = await agent.run(prompt, usage_limits=ASSESSMENT_LIMITS)
+        result  = await agent.run(
+            prompt, usage_limits=ASSESSMENT_LIMITS,
+            model_settings={"timeout": REQUEST_TIMEOUT_S},  # provider-native per-request cap
+        )
         pu      = result.output
         elapsed = time.monotonic() - t0
+        if stats:
+            _accumulate_usage(stats, result, elapsed)
         policy.update(
             storm_active=pu.storm_active,
             malicious_drop_prob=pu.malicious_drop_prob,
@@ -173,9 +227,17 @@ async def _do_assessment(
             f"({elapsed:.1f}s)  {pu.reasoning}"
         )
     except Exception as e:
+        # includes request timeouts and, for agent/MCP runs, exceptions wrapped in a
+        # TaskGroup/ExceptionGroup — unwrap those (recursively) to surface the real cause
+        # instead of the opaque "unhandled errors in a TaskGroup" message.
         if stats:
             stats.non_rt_errors += 1
-        print(f"[Non-RT] error at assessment {assessment}: {e}")
+        def _unwrap(x, depth=0):
+            subs = getattr(x, "exceptions", None)
+            if subs and depth < 5:
+                return " | ".join(_unwrap(s, depth + 1) for s in subs)
+            return f"{type(x).__name__}: {x}"
+        print(f"[Non-RT] error at assessment {assessment}: {_unwrap(e)}")
 
 
 async def run_assessment_loop(
@@ -184,12 +246,15 @@ async def run_assessment_loop(
     stop_event: asyncio.Event,
     interval:   float = 10.0,
     stats:      EpisodeStats | None = None,
+    window_s:   float = 40.0,
 ) -> None:
     """
     Autonomous Non-RT assessment loop. Sleeps `interval` between assessments,
     wakes early and exits cleanly when stop_event fires, and always runs one
     final assessment after the episode ends. Scheduled events reach the agent via
     the get_calendar MCP tool (the calendar lives on runtime.host).
+
+    window_s: how much recent telemetry (seconds) the judge sees each assessment.
     """
     assessment = 0
     while True:
@@ -205,11 +270,11 @@ async def run_assessment_loop(
         assessment += 1
         if stats:
             stats.non_rt_assessments += 1
-        await _do_assessment(agent, policy, assessment, stats)
+        await _do_assessment(agent, policy, assessment, stats, window_s=window_s)
 
     # Final assessment at episode end
     assessment += 1
     if stats:
         stats.non_rt_assessments += 1
     print(f"[Non-RT]  Episode complete — running final assessment #{assessment}.")
-    await _do_assessment(agent, policy, assessment, stats)
+    await _do_assessment(agent, policy, assessment, stats, window_s=window_s)

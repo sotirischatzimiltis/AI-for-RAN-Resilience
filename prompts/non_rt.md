@@ -36,7 +36,7 @@ STORM JUDGMENT — the decisive rule
 
   lam (arrival rate) is the PRIMARY signal. Baseline is ~20 UEs/s; a storm drives
   it toward ~200. If the LATEST lam is well above baseline (say > 3x), a storm IS
-  active — set storm_active=true and malicious_drop_prob≈0.8 — REGARDLESS of the
+  active — set storm_active=true and engage the filter — REGARDLESS of the
   retry-rate. When your filter is working, retries fall to ~0 DURING the storm;
   flat/zero retries while the latest lam is still high means the filter is doing
   its job, NOT that the storm ended. Do not be fooled into standing down mid-storm.
@@ -44,8 +44,8 @@ STORM JUDGMENT — the decisive rule
   even if the peak was high and the queue is still draining — stand down.
 
   Use the trends to place yourself in the lifecycle:
-    lam rising from baseline            → ONSET  : storm_active=true, drop≈0.8
-    lam high and sustained              → ACTIVE : storm_active=true, drop≈0.8
+    lam rising from baseline            → ONSET  : storm_active=true, drop>0 (see below)
+    lam high and sustained              → ACTIVE : storm_active=true, drop>0 (see below)
     lam fallen back to ~baseline, with a
       recent peak (queue may still be
       draining — queue LAGS)            → TAIL   : storm_active=false, drop=0.0
@@ -56,6 +56,25 @@ STORM JUDGMENT — the decisive rule
   is NOT sufficient to stand down while the latest lam is still high — keep the
   filter engaged until the drop has actually happened. (Use a falling forecast to
   anticipate, not to disengage early.)
+
+FILTER STRENGTH — YOUR judgment call (do NOT default to a fixed number)
+  When a storm is active you choose malicious_drop_prob anywhere in (0, 1], scaled
+  to how severe the overload is and whether your filtering is already containing it.
+  A weak, mild surge does not need the same aggression as a full flood; over-dropping
+  wastes benign capacity, under-dropping lets the storm through. Calibrate:
+    • SEVERITY — the further the LATEST lam is above baseline, the higher the drop.
+      As a guide (interpolate, don't snap to these):
+        lam ~2-3x baseline  (mild surge)        → drop ~0.3-0.5
+        lam ~4-6x baseline  (strong storm)      → drop ~0.6-0.8
+        lam >7x baseline or still climbing      → drop ~0.85-0.95
+    • FEEDBACK — read get_episode_stats (absorption) and the queue/retry trend from
+      the window. If the storm is being CONTAINED (queue draining, retries falling,
+      absorption holding up), you are at about the right strength — hold or ease
+      slightly. If it is STILL overwhelming you (queue climbing, retries high,
+      absorption dropping), raise the drop toward the top of the range.
+  State the level you picked and why (severity + whether it is being contained) in
+  your reasoning. Two assessments in different conditions should generally NOT carry
+  the identical drop value.
 
 PRE-PROVISIONING — two INDEPENDENT triggers, same action
   Get ahead of demand by raising lyapunov_V (e.g. to ~5000) with tighten=true so
@@ -76,7 +95,8 @@ PRE-PROVISIONING — two INDEPENDENT triggers, same action
 
 POLICY OUTPUT (PolicyUpdate)
   storm_active         – your storm verdict for right now (drives the drop filter).
-  malicious_drop_prob  – filter strength while the storm is active (0.0 when not).
+  malicious_drop_prob  – filter strength while the storm is active: YOUR calibrated
+                         value in (0,1] per FILTER STRENGTH above (0.0 when not).
   queue_hold_threshold – slow knob (default 10): queue length below which the fast
                          loop may scale servers back down. Raise (20–50) if capacity
                          was shed too early and the queue re-spiked; lower if servers

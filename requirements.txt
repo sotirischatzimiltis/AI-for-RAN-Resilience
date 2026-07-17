@@ -1,4 +1,10 @@
+# Python 3.11+ (developed on 3.12). Install into a fresh venv:
+#   pip install -r requirements.txt
+#
+# pydantic-ai MUST be >= 1.70 — earlier versions lack MCPServerStreamableHTTP and
+# will break every live/MCP run. fastmcp is required by mcp_server/server.py.
 simpy>=4.0
-numpy
-matplotlib
-pydantic-ai[mcp]>=0.4
+numpy>=1.26
+matplotlib>=3.8
+pydantic-ai[openai,mcp]>=1.70
+fastmcp>=3.0

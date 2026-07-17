@@ -39,7 +39,7 @@ under benign + malicious load.
   is set, the *processing* component of each attach inflates by `1/(1 − ρc)`, with
   `ρc = busy_workers / kappa` (clamped by `compute_rho_cap`). Concurrency slows every
   attach; propagation delay is unaffected. Off by default (recovers the paper's numbers).
-  `sim/simulator.py::_service_time`.
+  Exposed as `--compute-kappa`. `sim/simulator.py::_service_time`.
 
 ### 1.3 Capacity / servers
 - **Multi-server queue** `[default on]` — `c` servers, FIFO wait queue, a dispatcher
@@ -48,7 +48,8 @@ under benign + malicious load.
 - **Server provisioning delay (warm-up)** `[optional]` — with `server_provision_delay_s`,
   newly commanded servers come online **one at a time, `delay` s apart** (image pull /
   boot / pool attach of a vDU/vCU). **Scale-down is immediate** with no preemption of
-  in-flight attaches. Default 0 = instant. `sim/simulator.py::_provisioning_manager`.
+  in-flight attaches. Default 0 = instant. Exposed as `--provision-delay`.
+  `sim/simulator.py::_provisioning_manager`.
 - **Online vs commanded capacity** `[default on]` — telemetry exposes both `c` (online)
   and `c_target` (commanded), so warm-up lag is observable.
 
@@ -102,11 +103,14 @@ and a deterministic **fast control loop**, over the simulation above.
   regression of λ / retry-rate / fail-rate / queue with trend + confidence),
   `get_episode_stats` (cumulative resilience + counters). `mcp_server/server.py`.
 - **Pre-provisioning** — raise V ahead of demand on **either** a scheduled calendar event
-  **or** a confident forecast ramp (an unscheduled surge).
+  **or** a confident forecast ramp (an unscheduled surge). Each information source is
+  **ablatable**: `--no-forecast` / `--no-calendar` make the tool return "unavailable" so
+  the marginal value of each can be measured.
 
 ### 2.3 Reactive security & learning
 - **Release valve** — the fast loop drops the filter the instant load returns to baseline,
-  without waiting for the LLM, so recovery traffic is never over-filtered.
+  without waiting for the LLM, so recovery traffic is never over-filtered. Ablatable via
+  `--no-release-valve` (filter then disengages only on the LLM's next storm=False verdict).
 - **Learned storm-signature auto-engagement** — after weathering a storm the fast loop
   learns the benign baseline and a storm-onset threshold, then engages the filter itself
   with no LLM latency. Two toggleable timescales: **within-episode** (`--learn-within`) and

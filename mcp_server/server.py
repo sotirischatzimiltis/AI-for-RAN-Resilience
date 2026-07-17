@@ -34,6 +34,8 @@ def get_calendar() -> dict:
     imminent, raise the Lyapunov utility weight so the fast loop runs more servers
     ahead of the demand. (This is deterministic schedule info, not a prediction.)
     """
+    if not host.calendar_enabled:
+        return {"disabled": "calendar unavailable at this site (ablation)"}
     t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0
     return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)}
 
@@ -50,6 +52,8 @@ def get_forecast() -> dict:
     PRE-PROVISION (raise lyapunov_V, tighten=true) before a storm is confirmed;
     discount low-confidence projections.
     """
+    if not host.forecast_enabled:
+        return {"disabled": "forecast unavailable at this site (ablation)"}
     if host.sim is None or len(host.sim.telemetry) < 3:
         return {"error": "insufficient data — episode may not have started yet"}
     tel = host.sim.telemetry

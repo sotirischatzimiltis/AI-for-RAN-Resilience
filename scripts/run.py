@@ -125,6 +125,11 @@ async def main(args: argparse.Namespace) -> None:
         learn_within=args.learn_within,
         learn_across=args.learn_across,
         intents=intents,
+        no_forecast=args.no_forecast,
+        no_calendar=args.no_calendar,
+        no_release_valve=args.no_release_valve,
+        compute_kappa=args.compute_kappa,
+        provision_delay=args.provision_delay,
     )
     elapsed = time.monotonic() - t0
 
@@ -164,7 +169,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pydantic AI agentic resilience run")
     parser.add_argument("--model",               default="ollama:llama3.2")
     parser.add_argument("--scenario",            default="single_storm",
-                        choices=["single_storm", "multi_storm"])
+                        choices=["single_storm", "multi_storm", "multi_storm_flat"])
     parser.add_argument("--seed",                type=int,   default=3)
     parser.add_argument("--c-max",               type=int,   default=16,   dest="c_max")
     parser.add_argument("--rt-factor",           type=float, default=1.0,  dest="rt_factor")
@@ -185,5 +190,19 @@ if __name__ == "__main__":
                              "\"guarantee at least 4 servers\"")
     parser.add_argument("--intent-at",           type=float, default=5.0, dest="intent_at",
                         help="wall-clock seconds into the run to inject the operator intent")
+    # --- ablation toggles (knock out one anticipation/reaction mechanism) ---
+    parser.add_argument("--no-forecast",         action="store_true", dest="no_forecast",
+                        help="ablation: get_forecast returns 'unavailable' (no data-driven pre-provisioning)")
+    parser.add_argument("--no-calendar",         action="store_true", dest="no_calendar",
+                        help="ablation: get_calendar returns 'unavailable' (no scheduled-event pre-provisioning)")
+    parser.add_argument("--no-release-valve",    action="store_true", dest="no_release_valve",
+                        help="ablation: disable the code-side filter release (filter drops only on LLM verdict)")
+    # --- system-model stressors (off by default; recover the paper's numbers) ---
+    parser.add_argument("--compute-kappa",       type=float, default=None, dest="compute_kappa",
+                        help="shared-compute contention: attach processing inflates by 1/(1-rho_c), "
+                             "rho_c=busy/kappa. Off (None) by default.")
+    parser.add_argument("--provision-delay",     type=float, default=0.0, dest="provision_delay",
+                        help="server warm-up: new servers come online one at a time, this many seconds "
+                             "apart (0 = instant).")
     args = parser.parse_args()
     asyncio.run(main(args))

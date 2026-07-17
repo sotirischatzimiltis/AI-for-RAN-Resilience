@@ -196,3 +196,27 @@ def multi_storm_traffic() -> TrafficConfig:
         StormPhase(780,  840,  220, 80, "storm-3"),
         StormPhase(840, 1100,  20, 0,   "recover-3"),
     ])
+
+
+def multi_storm_flat_traffic(benign=180.0, botnet=60.0, normal=20.0,
+                             lead=60.0, storm=60.0, gap=90.0,
+                             n_storms=3) -> TrafficConfig:
+    """
+    N IDENTICAL storms (non-incremental arrivals) on a COMPRESSED timeline. Every
+    storm has the same benign peak and botnet rate, so a faster/stronger response on
+    later storms is attributable to LEARNING or the model, not to the storm being
+    easier or harder. The fair variant for the LLM bake-off and learning curve.
+
+    Timeline knobs (shorten the episode → less wall-clock at rt_factor=1):
+      lead  — initial calm before storm 1 (must be >= the scoring baseline lookback ~50s)
+      storm — each storm's duration
+      gap   — idle/recovery between storms; long enough for the system to settle back
+              to baseline AND to give the next storm ~50s of clean pre-storm baseline.
+    Default 60 + 3*(60+90) = 510s (vs the old 1100s), storm-1 still at 60-120s.
+    """
+    phases = [StormPhase(0.0, lead, normal, 0.0, "calm-1")]
+    t = lead
+    for i in range(1, n_storms + 1):
+        phases.append(StormPhase(t, t + storm, benign, botnet, f"storm-{i}")); t += storm
+        phases.append(StormPhase(t, t + gap, normal, 0.0, f"recover-{i}"));    t += gap
+    return TrafficConfig(phases=phases)
