@@ -1,17 +1,20 @@
+% Requires \usepackage{booktabs} and amsmath (\mathbf, \pm, \approx).
 \begin{table}[t]
 \centering
-\caption{LLM storm-judge comparison on \texttt{multi\_storm\_flat} (5 seeds, bare judge). Resilience $P$ is capacity-bound and does not separate models; the judge is compared on botnet-blocked rate. Benign-served is $1.000$ for all (the filter is botnet-targeted).}
+\caption{LLM storm-judge comparison on the \texttt{multi\_storm\_flat} scenario (5 seeds, bare judge). Resilience $P$ is capacity-bound and near-identical across models ($\approx\!0.835$), and benign-served is $1.000$ for all (the malicious-UE filter is botnet-targeted); models are therefore ranked by botnet-blocked rate ($\pm$\,std). For \texttt{gpt-5.4-mini}, reasoning \emph{off} strictly dominates \emph{on} (non-overlapping per-seed ranges), i.e.\ reasoning does not help this task. The selected judge is shown in bold. \texttt{gpt-4o-mini} produced a small number of malformed outputs over the sweep; all other models produced none.}
 \label{tab:model_bakeoff}
-\begin{tabular}{llccccc}
+\small
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llcccc}
 \toprule
-Model & Rsn & Blocked $\uparrow$ & $P$ & \$/ep & Lat (s) & Err \\
+Model & Rsn. & Blocked\,$\uparrow$ & $P$ & \$/ep & Lat.\,(s) \\
 \midrule
-gemini-3.1-flash-lite & n/a & $0.799\pm0.037$ & $0.835$ & 0.0872 & 2.0 & 0 \\
-gpt-5.4-mini & off & $0.778\pm0.048$ & $0.835$ & 0.2223 & 3.1 & 0 \\
-gpt-4o-mini & n/a & $0.745\pm0.056$ & $0.836$ & 0.0435 & 2.4 & 2 \\
-claude-haiku-4.5 & n/a & $0.688\pm0.043$ & $0.836$ & 0.4163 & 3.5 & 0 \\
-qwen3.7-plus & off & $0.687\pm0.064$ & $0.836$ & 0.0981 & 4.0 & 0 \\
-gpt-5.4-mini & on & $0.658\pm0.025$ & $0.836$ & 0.2299 & 7.5 & 0 \\
+\textbf{gemini-3.1-flash-lite} & -- & $\mathbf{0.799\,\pm\,0.037}$ & 0.835 & 0.087 & 2.0 \\
+gpt-5.4-mini & off & $0.778\,\pm\,0.048$ & 0.835 & 0.222 & 3.1 \\
+gpt-4o-mini & -- & $0.745\,\pm\,0.056$ & 0.836 & 0.043 & 2.4 \\
+claude-haiku-4.5 & -- & $0.688\,\pm\,0.043$ & 0.836 & 0.416 & 3.5 \\
+qwen3.7-plus & off & $0.687\,\pm\,0.064$ & 0.836 & 0.098 & 4.0 \\
+gpt-5.4-mini & on & $0.658\,\pm\,0.025$ & 0.836 & 0.230 & 7.5 \\
 \bottomrule
 \end{tabular}
 \end{table}

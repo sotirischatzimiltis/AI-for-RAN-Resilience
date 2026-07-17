@@ -53,26 +53,43 @@ def markdown_table(rows, scenario: str, seeds) -> str:
 
 
 def latex_table(rows, scenario: str, seeds) -> str:
+    """Publication-quality booktabs table. Winner (top blocked-rate) in bold; the
+    findings the numbers alone don't show live in the caption. Requires \\usepackage{booktabs}."""
+    scn = scenario.replace("_", r"\_")
+    n_err = sum(1 for _, _, s in rows if s.get("errors_total", 0) > 0)
+    err_note = ("" if n_err == 0 else
+                r" \texttt{gpt-4o-mini} produced a small number of malformed outputs over "
+                r"the sweep; all other models produced none.")
     hdr = [
+        r"% Requires \usepackage{booktabs} and amsmath (\mathbf, \pm, \approx).",
         r"\begin{table}[t]",
         r"\centering",
-        rf"\caption{{LLM storm-judge comparison on \texttt{{{scenario.replace('_', r'\_')}}} "
-        rf"({len(seeds)} seeds, bare judge). Resilience $P$ is capacity-bound and does not "
-        r"separate models; the judge is compared on botnet-blocked rate. Benign-served is "
-        r"$1.000$ for all (the filter is botnet-targeted).}",
+        rf"\caption{{LLM storm-judge comparison on the \texttt{{{scn}}} scenario "
+        rf"({len(seeds)} seeds, bare judge). Resilience $P$ is capacity-bound and near-identical "
+        r"across models ($\approx\!0.835$), and benign-served is $1.000$ for all (the malicious-UE "
+        r"filter is botnet-targeted); models are therefore ranked by botnet-blocked rate "
+        r"($\pm$\,std). For \texttt{gpt-5.4-mini}, reasoning \emph{off} strictly dominates "
+        r"\emph{on} (non-overlapping per-seed ranges), i.e.\ reasoning does not help this task. "
+        rf"The selected judge is shown in bold.{err_note}}}",
         r"\label{tab:model_bakeoff}",
-        r"\begin{tabular}{llccccc}",
+        r"\small",
+        r"\setlength{\tabcolsep}{5pt}",
+        r"\begin{tabular}{llcccc}",
         r"\toprule",
-        r"Model & Rsn & Blocked $\uparrow$ & $P$ & \$/ep & Lat (s) & Err \\",
+        r"Model & Rsn. & Blocked\,$\uparrow$ & $P$ & \$/ep & Lat.\,(s) \\",
         r"\midrule",
     ]
     body = []
-    for name, rsn, s in rows:
-        nm = name.replace("_", r"\_")
-        body.append(
-            rf"{nm} & {rsn} & ${s['blocked_mean']:.3f}\pm{s.get('blocked_std', 0.0):.3f}$ & "
-            rf"${s['P_mean']:.3f}$ & {s['usd_per_episode']:.4f} & {s['mean_latency_s']:.1f} & "
-            rf"{s['errors_total']} \\")
+    for i, (name, rsn, s) in enumerate(rows):
+        nm  = name.replace("_", r"\_")
+        rs  = "--" if rsn == "n/a" else rsn
+        blk = f"{s['blocked_mean']:.3f}\\,\\pm\\,{s.get('blocked_std', 0.0):.3f}"
+        cost, lat, P = s["usd_per_episode"], s["mean_latency_s"], s["P_mean"]
+        if i == 0:   # winner row — bold model + blocked
+            body.append(rf"\textbf{{{nm}}} & {rs} & $\mathbf{{{blk}}}$ & "
+                        rf"{P:.3f} & {cost:.3f} & {lat:.1f} \\")
+        else:
+            body.append(rf"{nm} & {rs} & ${blk}$ & {P:.3f} & {cost:.3f} & {lat:.1f} \\")
     ftr = [r"\bottomrule", r"\end{tabular}", r"\end{table}"]
     return "\n".join(hdr + body + ftr) + "\n"
 
