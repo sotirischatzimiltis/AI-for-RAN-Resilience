@@ -53,11 +53,32 @@ def per_storm_blocked(telemetry, storms) -> list[float]:
 def malicious_blocked_rate(stats) -> float:
     """Fraction of botnet UEs denied service (dropped at admission OR eventually
     failed): (malicious_dropped + malicious_failed) / all malicious outcomes.
-    High is good — the attack was absorbed."""
+    High is good — the attack was absorbed. NOTE: this counts BOTH deliberate filter
+    drops and incidental starvation-failures, so a capacity-starved system with no
+    filter can score high while also failing benign traffic; pair it with
+    benign_success_rate, or use malicious_filtered_rate to isolate the deliberate defense."""
     mal_denied    = stats.malicious_dropped + stats.malicious_failed
     mal_completed = stats.completed - stats.benign_completed   # botnet that got through
     denom = mal_denied + mal_completed
     return mal_denied / denom if denom > 0 else 0.0
+
+
+def avg_servers(telemetry) -> float:
+    """Mean number of ONLINE servers over the episode — a capacity-cost proxy. A static
+    controller sits at its fixed count; a dynamic one scales down in calm periods, so a
+    lower mean at equal resilience means the same protection for less capacity."""
+    cs = [s.c for s in telemetry]
+    return sum(cs) / len(cs) if cs else 0.0
+
+
+def malicious_filtered_rate(stats) -> float:
+    """Fraction of botnet UEs DELIBERATELY dropped at admission by the filter (the
+    intended defense), out of all botnet outcomes. Unlike malicious_blocked_rate this
+    excludes starvation-failures, so a no-filter baseline scores 0 no matter how
+    overloaded it is — it isolates 'did the system actively filter the attack?'."""
+    mal_completed = stats.completed - stats.benign_completed
+    denom = stats.malicious_dropped + stats.malicious_failed + mal_completed
+    return stats.malicious_dropped / denom if denom > 0 else 0.0
 
 
 @dataclass

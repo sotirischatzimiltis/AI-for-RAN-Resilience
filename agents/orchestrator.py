@@ -32,7 +32,8 @@ from agents.policy              import SharedPolicy, EpisodeStats
 from event_calendar             import ScheduledEvent
 from runtime                    import host as sim_host, UP
 from sim.metrics                import (resilience_multi, benign_success_rate,
-                                        malicious_blocked_rate, per_storm_blocked)
+                                        malicious_blocked_rate, malicious_filtered_rate,
+                                        avg_servers, per_storm_blocked)
 from policy_store               import load_knobs, save_knobs, load_storm_memory, save_storm_memory
 from storm_memory               import StormMemory
 
@@ -144,6 +145,7 @@ async def run_episode(
     rt_factor:             float   = 1.0,
     poll_interval_s:       float   = 1.0,
     assessment_interval_s: float   = 10.0,
+    window_s:              float   = 40.0,
     t_post:                float | None = None,
     calendar: list | None = None,
     intents: list[tuple[float, str, str]] | None = None,
@@ -155,6 +157,7 @@ async def run_episode(
     no_release_valve:      bool = False,
     compute_kappa:         float | None = None,
     provision_delay:       float = 0.0,
+    non_rt_prompt:         str | None = None,
 ) -> dict:
     """
     Run one full episode with autonomous Near-RT and Non-RT loops.
@@ -171,8 +174,10 @@ async def run_episode(
     intents               : optional list of (delay_s, target, intent_text)
                             injected at the given wall-clock delays into the episode
     """
-    non_rt = build_non_rt_agent(model)              # per-site storm judge + policy writer
-    orchestrator = build_orchestrator_agent(model)  # network tier: understands operator intents
+    non_rt = build_non_rt_agent(model, system_prompt=non_rt_prompt)  # per-site storm judge (optional custom prompt)
+    # The Orchestrator (operator-intent tier) is only built/run when intents are present
+    # (Phase E). With no intents — Phases A–D — it never spins up.
+    orchestrator = build_orchestrator_agent(model) if intents else None
 
     # Seed the slow tuning knobs from the previous episode if persistence is on;
     # the operational levers (storm_active, drop) always start fresh.
@@ -235,7 +240,7 @@ async def run_episode(
                              release_valve=not no_release_valve)
         ),
         asyncio.create_task(
-            run_assessment_loop(non_rt, policy, stop_event, assessment_interval_s, stats)
+            run_assessment_loop(non_rt, policy, stop_event, assessment_interval_s, stats, window_s=window_s)
         ),
     ]
     if intents:
@@ -290,12 +295,15 @@ async def run_episode(
         "llm_input_tokens":    stats.llm_input_tokens,
         "llm_output_tokens":   stats.llm_output_tokens,
         "llm_latency_s":       round(stats.llm_latency_s, 2),
-        "mean_assessment_latency_s": round(stats.llm_latency_s / max(1, stats.non_rt_assessments), 2),
+        "mean_llm_latency_s":        round(stats.llm_latency_s / max(1, stats.non_rt_assessments), 3),
+        "mean_assessment_latency_s": round(stats.assessment_latency_s / max(1, stats.non_rt_assessments), 3),
         "final_P":             round(final_P, 4),
         "per_storm_P":         per_storm,
         "per_storm_blocked":   per_storm_block,
-        "benign_success_rate":    round(benign_success_rate(sim_stats), 4) if sim_stats else 1.0,
-        "malicious_blocked_rate": round(malicious_blocked_rate(sim_stats), 4) if sim_stats else 0.0,
+        "benign_success_rate":     round(benign_success_rate(sim_stats), 4) if sim_stats else 1.0,
+        "malicious_blocked_rate":  round(malicious_blocked_rate(sim_stats), 4) if sim_stats else 0.0,
+        "malicious_filtered_rate": round(malicious_filtered_rate(sim_stats), 4) if sim_stats else 0.0,
+        "avg_servers":             round(avg_servers(sim_host.sim.telemetry), 3) if sim_host.sim else 0.0,
         "final_policy": {
             "malicious_drop_prob":  policy.malicious_drop_prob,
             "queue_hold_threshold": policy.queue_hold_threshold,

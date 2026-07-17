@@ -70,6 +70,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 | `non_rt.md` | full judge prompt (used by the full system, phases A–E) |
 | `orchestrator.md` | operator-intent prompt |
 | `prompts_mc_non_rt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
+| `prompts_phaseA_non_rt.md` | dedicated **Phase A** judge prompt (detection + filter, release-valve-off framing) |
 
 ### `mcp_server/` — tools the judge can call
 | File | Role |
@@ -102,6 +103,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 | Script | Experiment |
 |---|---|
 | `experiment_model_comparison.py` | **Exp 1: LLM bake-off — self-contained** (own bare-judge episode; does not use `run_episode`) |
+| `experiment_phaseA_headline.py` | **Exp A: headline** — Static(c=1/8/16) + Lyapunov vs agentic (gemini); self-contained, same as Exp 1 |
 | `plot_model_comparison.py` | plot Exp 1 results (`model_comparison.json` → 4-panel `model_comparison.png`) |
 | `table_model_comparison.py` | tabulate Exp 1 results (`model_comparison.json` → markdown + `model_comparison_table.tex`) |
 | `ablation.py` | Exp B: mechanism knockouts (forecast/calendar/release/learning) |

@@ -168,4 +168,6 @@ class EpisodeStats:
     llm_requests:       int   = 0
     llm_input_tokens:   int   = 0
     llm_output_tokens:  int   = 0
-    llm_latency_s:      float = 0.0   # cumulative wall time spent in agent.run()
+    llm_latency_s:      float = 0.0   # cumulative wall time inside agent.run() (pure LLM + tool calls)
+    assessment_latency_s: float = 0.0 # cumulative wall time for the WHOLE assessment
+                                       # (telemetry summary + prompt build + LLM + policy write)

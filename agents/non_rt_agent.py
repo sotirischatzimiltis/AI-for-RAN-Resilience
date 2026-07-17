@@ -85,6 +85,23 @@ def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
     )
 
 
+def _resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> float:
+    """Estimate the cell's resting arrival rate as the LOWEST arrival-rate LEVEL the
+    cell actually sits at for a non-trivial share of the episode — the low mode of the
+    lam distribution. Unlike a fixed percentile this keys on the VALUE of the low
+    cluster, not on how often it occurs, so it stays correct even in a storm-dominant
+    episode (as long as the cell rests at all). Arrival rates are binned; brief
+    transition samples are ignored by requiring a bin to hold at least `min_frac` of the
+    busiest bin's count, then the lowest surviving bin is the resting level."""
+    from collections import Counter
+    lams = [s.lam_current for s in telemetry]
+    if not lams:
+        return 0.0
+    binned = Counter(round(l / bin_size) * bin_size for l in lams)
+    floor  = max(1.0, min_frac * max(binned.values()))
+    return float(min(b for b, c in binned.items() if c >= floor))
+
+
 def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     """
     Summarise the last ~window_s of telemetry as TRENDS so the model can tell a
@@ -132,13 +149,9 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
         bins.append(str(round(sum(vals) / len(vals))) if vals else "-")
     traj = " ".join(bins)
 
-    # Resting baseline from the FULL history so far (not just the window): a low
-    # percentile of every arrival-rate sample. Calm periods dominate the episode, so
-    # this tracks the true resting level and stays valid even when the current window
-    # is entirely inside a storm — where there is no local calm stretch to read rest
-    # from. Gives the (stateless) judge a rest reference mid-storm.
-    all_lam  = sorted(s.lam_current for s in telemetry)
-    baseline = all_lam[max(0, int(0.25 * (len(all_lam) - 1)))]
+    # Resting baseline from the FULL history so far (not just the window), so the judge
+    # has a rest reference even when the current window is entirely inside a storm.
+    baseline = _resting_lam(telemetry)
 
     return (
         f"Window: last {t1 - t0:.0f}s ({len(win)} samples), now t={t_now:.0f}s\n"
@@ -204,12 +217,13 @@ async def _do_assessment(
         "trends and return a PolicyUpdate."
     )
     try:
+        t_llm   = time.monotonic()
         result  = await agent.run(
             prompt, usage_limits=ASSESSMENT_LIMITS,
             model_settings={"timeout": REQUEST_TIMEOUT_S},  # provider-native per-request cap
         )
+        elapsed = time.monotonic() - t_llm     # pure LLM call time (incl. tool round-trips)
         pu      = result.output
-        elapsed = time.monotonic() - t0
         if stats:
             _accumulate_usage(stats, result, elapsed)
         policy.update(
@@ -238,6 +252,10 @@ async def _do_assessment(
                 return " | ".join(_unwrap(s, depth + 1) for s in subs)
             return f"{type(x).__name__}: {x}"
         print(f"[Non-RT] error at assessment {assessment}: {_unwrap(e)}")
+    finally:
+        # full assessment wall time: telemetry summary + prompt build + LLM + policy write
+        if stats:
+            stats.assessment_latency_s += time.monotonic() - t0
 
 
 async def run_assessment_loop(
