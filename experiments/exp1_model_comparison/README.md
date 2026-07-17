@@ -54,3 +54,7 @@ python -m scripts.plot_model_comparison
 - `model_comparison.json` — full results (means + std for P/benign/blocked, tokens, $, latency)
 - `model_comparison.png` — 4-panel figure (P / security / cost / quality-vs-cost)
 - `model_comparison_table.tex` — LaTeX (booktabs) table for the paper
+
+The runner and prompt are **not duplicated here** — they live in
+`scripts/experiment_model_comparison.py` and `prompts/prompts_mc_non_rt.md`
+(the reproduce commands above invoke them).
