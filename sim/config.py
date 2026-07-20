@@ -115,6 +115,13 @@ class SimConfig:
     # always immediate (no preemption of in-flight attaches).
     server_provision_delay_s: float = 0.0
 
+    def __post_init__(self):
+        # compute_rho_cap must stay strictly below 1: service time inflates by
+        # 1/(1 - rho_c) and rho_c is capped at this value, so cap >= 1 would divide
+        # by zero (==1) or produce negative service times (>1). Fail loud on misconfig.
+        if not (0.0 <= self.compute_rho_cap < 1.0):
+            raise ValueError(f"compute_rho_cap must be in [0, 1) (got {self.compute_rho_cap})")
+
 # ------ Convenience scenario builders----------------------------------------------
 def single_storm_traffic(normal=20.0, storm=200.0,
                          t_pre=50.0, t_storm=60.0, t_post=900.0) -> TrafficConfig:

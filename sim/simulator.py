@@ -14,7 +14,6 @@ M/M/c model in the prior paper cannot capture).
 The server count c is mutable at runtime via set_servers(), so external
 controllers (fixed, Lyapunov, or agentic) can act on the system.
 """
-
 from __future__ import annotations
 
 import random
@@ -26,10 +25,9 @@ import simpy.rt
 
 from .config import SimConfig
 
-
 @dataclass
 class TelemetrySample:
-    t: float
+    t: float                   # simulation time (s)
     lam_current: float         # instantaneous Poisson arrival rate (benign+botnet), UEs/s
     queue_len: int             # attempts waiting for a server
     busy: int                  # attempts in service
@@ -43,14 +41,17 @@ class TelemetrySample:
     malicious_arrivals: int = 0  # cumulative botnet UEs spawned
     malicious_dropped: int = 0   # cumulative botnet UEs dropped at admission
 
-
 @dataclass
 class Stats:
-    completed: int = 0
-    failed: int = 0
-    retries: int = 0
-    arrivals: int = 0
+    completed: int = 0          # cumulative successful attaches
+    failed: int = 0             # cumulative UEs that exhausted retries
+    retries: int = 0            # cumulative retry events
+    arrivals: int = 0           # cumulative attach attempts submitted (incl. retries)
     completion_delays: List[float] = field(default_factory=list)  # successful attach latency (ms)
+    completion_times:  List[float] = field(default_factory=list)  # sim-time (s) each success completed
+    completion_benign: List[bool]  = field(default_factory=list)  # True if that completed UE was benign
+    # ^ these three are index-aligned (one entry per successful attach), so latency can be
+    #   sliced by storm window (completion_times) and by user class (completion_benign).
 
     # split by UE class so we can tell "legit users served" from "botnet blocked".
     # failed lumps both a benign UE that timed out AND a botnet UE the filter dropped;
@@ -64,17 +65,23 @@ class Stats:
 
 class _Attempt:
     """One attach attempt (a UE may make several across retries)."""
+    # __slots__ fixes the allowed attributes and drops the per-instance __dict__:
+    # with tens of thousands of attempts per episode this saves memory and speeds
+    # attribute access. Only these five fields may ever be set on an _Attempt.
     __slots__ = ("ue_id", "malicious", "served_evt", "abandoned", "in_service")
 
     def __init__(self, ue_id: int, malicious: bool, env: simpy.Environment):
-        self.ue_id = ue_id
-        self.malicious = malicious
-        self.served_evt = env.event()
-        self.abandoned = False
-        self.in_service = False
-
+        self.ue_id = ue_id            # which UE this try belongs to (stable across its retries)
+        self.malicious = malicious    # botnet UE? carried so the outcome lands in the right stat bucket
+        self.served_evt = env.event() # SimPy event the server fires (.succeed()) to signal "attached";
+                                      #   the UE process waits on it, raced against the T300 timer
+        self.abandoned = False        # set True when T300 expires -> this try is given up (see the race
+                                      #   guards in _serve and the abandon path so it isn't counted twice)
+        self.in_service = False       # set True once the dispatcher hands it to a server; tells the
+                                      #   abandon path whether it's still safe to pull from the queue
 
 class StormSim:
+   # -------- Initialization and configuration of the simulation ------------------------------
     def __init__(self, cfg: SimConfig):
         self.cfg = cfg
         if cfg.realtime:
@@ -87,8 +94,11 @@ class StormSim:
             self.env = simpy.Environment()
         self.rng = random.Random(cfg.seed)
 
-        self.c = cfg.c0            # COMMANDED server count (set by controller)
-        self.c_online = cfg.c0     # servers actually ONLINE (initial ones already up)
+        # clamp the initial count into [1, c_max] so a misconfigured c0 can't start
+        # the sim above the ceiling (set_servers enforces the same bound at runtime).
+        c0 = max(1, min(int(cfg.c0), cfg.c_max))
+        self.c = c0                # COMMANDED server count (set by controller)
+        self.c_online = c0         # servers actually ONLINE (initial ones already up)
         self.busy = 0
         self.waiting: List[_Attempt] = []
         self.stats = Stats()
@@ -108,14 +118,18 @@ class StormSim:
         # propagation component is fixed link physics and does not.
         self._proc_s = cfg.arch.proc_total_ms / 1000.0
         self._prop_s = (cfg.arch.n_ctrl_messages * cfg.arch.oneway_delay_ms) / 1000.0
-        self._wake = self.env.event()
-        self._provision_wake = self.env.event()
-        self._ue_counter = 0
+        # re-armable "poke me" signals for the two parked background loops (one-shot
+        # SimPy events, re-created after each fire — see _signal / set_servers).
+        self._wake = self.env.event()            # wakes the dispatcher: queue/capacity changed
+        self._provision_wake = self.env.event()  # wakes the provisioning mgr: commanded c changed
+        self._ue_counter = 0                     # monotonic id handed to each new UE
 
-        self.env.process(self._arrival_process())
-        self.env.process(self._dispatcher())
-        self.env.process(self._provisioning_manager())
-        self.env.process(self._telemetry_process())
+        # register the four concurrent processes that drive the simulation; they run
+        # cooperatively on the SimPy event loop once env.run() starts.
+        self.env.process(self._arrival_process())        # spawns UEs per the traffic schedule
+        self.env.process(self._dispatcher())             # assigns waiting attempts to free servers
+        self.env.process(self._provisioning_manager())   # brings servers online/offline toward c
+        self.env.process(self._telemetry_process())      # samples state into telemetry each tick
 
     # -- runtime actuators (used by controllers / agents) --------------------
     def set_servers(self, c: int):
@@ -189,17 +203,25 @@ class StormSim:
                 self.stats.completed += 1
                 if not malicious:
                     self.stats.benign_completed += 1
+                # record this success: end-to-end latency (ms), when it completed (s),
+                # and whether it was a real user — kept index-aligned across the 3 lists.
                 self.stats.completion_delays.append((env.now - t_arrival) * 1000.0)
+                self.stats.completion_times.append(env.now)
+                self.stats.completion_benign.append(not malicious)
                 return
             else:
-                # T300 expired: abandon this attempt and retry
+                # T300 expired: abandon this attempt
                 att.abandoned = True
                 if not att.in_service and att in self.waiting:
                     self.waiting.remove(att)
-                self.stats.retries += 1
+                # if this was the last allowed attempt, stop here: no retry to count and
+                # no re-attach wait to serve — fall through to the exhausted-failure path.
+                if attempt_idx == cfg.rrc.max_attempts - 1:
+                    break
+                self.stats.retries += 1   # a genuine re-attempt follows
                 if cfg.rrc.backoff_ms > 0:
                     yield env.timeout(cfg.rrc.backoff_ms / 1000.0)
-                # botnet UEs aggressively re-attach
+                # botnet UEs re-attach on their own period (on top of any backoff)
                 if malicious and cfg.botnet_attach_period_ms > 0:
                     yield env.timeout(cfg.botnet_attach_period_ms / 1000.0)
         # exhausted attempts
