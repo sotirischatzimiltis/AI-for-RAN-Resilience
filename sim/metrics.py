@@ -52,6 +52,55 @@ def avg_servers(telemetry) -> float:
     cs = [s.c for s in telemetry] # list of server counts over time
     return sum(cs) / len(cs) if cs else 0.0
 
+def _percentile(vals: Sequence[float], p: float) -> float:
+    # linear-interpolation percentile (numpy's default method). vals need not be sorted.
+    if not vals:
+        return 0.0
+    xs = sorted(vals)
+    if len(xs) == 1:
+        return xs[0]
+    k    = (len(xs) - 1) * (p / 100.0)   # fractional rank of the p-th percentile
+    lo   = int(k)                        # lower bracketing index
+    hi   = min(lo + 1, len(xs) - 1)      # upper bracketing index
+    frac = k - lo                        # how far between them
+    return xs[lo] + (xs[hi] - xs[lo]) * frac   # interpolate
+
+def attach_latency_stats(stats, storms=None, benign_only: bool = True) -> dict:
+    """End-to-end attach latency (ms) of successful UEs — mean / p50 / p95 / count.
+
+    Latency is measured from a UE's ORIGINAL arrival to completion, so it includes
+    every T300 timeout, retry and queue wait — the real user-experienced attach time.
+
+    - storms=None            -> whole episode.
+    - storms=[(t0,td),...]   -> ONLY UEs that COMPLETED inside a storm window
+                                (the 'latency-under-storm' view; needs completion_times).
+    - benign_only=True       -> exclude botnet UEs that slipped through, so this reflects
+                                REAL users' experience (needs completion_benign).
+
+    Returns {"n", "mean_ms", "p50_ms", "p95_ms"}; zeros if no matching completions."""
+    delays = list(stats.completion_delays)
+    times  = list(getattr(stats, "completion_times", []) or [])
+    benign = list(getattr(stats, "completion_benign", []) or [])
+    n = len(delays)
+
+    idx = list(range(n))                                  # start with every successful attach
+    if benign_only and len(benign) == n:                 # keep only real users (if class recorded)
+        idx = [i for i in idx if benign[i]]
+    if storms and len(times) == n:                        # keep only completions inside a storm window
+        def _in_storm(t):
+            return any(t0 <= t <= td for (t0, td) in storms)
+        idx = [i for i in idx if _in_storm(times[i])]
+
+    sample = [delays[i] for i in idx]
+    if not sample:
+        return {"n": 0, "mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0}
+    return {
+        "n":       len(sample),
+        "mean_ms": round(sum(sample) / len(sample), 1),
+        "p50_ms":  round(_percentile(sample, 50), 1),
+        "p95_ms":  round(_percentile(sample, 95), 1),   # tail latency — what the worst-served users felt
+    }
+
 def resilience_efficiency(P: float, avg_servers: float, c_max: float) -> float:
     """Resilience delivered per unit of capacity used: P / (avg_servers / c_max).
 
