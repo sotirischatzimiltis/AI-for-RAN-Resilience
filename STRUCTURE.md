@@ -1,7 +1,7 @@
 # Project Structure
 
 > **Living document — keep it current.** Update this file whenever a script,
-> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-07-17.
+> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-07-20.
 
 An agentic controller for signaling-storm resilience in Open RAN: a **3-tier control
 stack** (Orchestrator → LLM storm judge → deterministic fast loop) sitting on top of a
@@ -27,12 +27,14 @@ Operator (natural-language intent)
 ## Folders
 
 ### `sim/` — the simulator (the "world"; no AI)
+See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown.
 | File | Role |
 |---|---|
+| `README.md` | per-file / per-component guide to the whole `sim/` package |
 | `simulator.py` | SimPy discrete-event engine: UE attach, T300 retries, storms, botnet, servers |
 | `config.py` | scenarios & traffic (`single_storm`, `multi_storm`, `multi_storm_flat`), arch constants, stressor knobs |
-| `controllers.py` | deterministic controllers (Lyapunov / Fixed / Forecast) — the **baselines** |
-| `metrics.py` | resilience P, benign-served & botnet-blocked rates, utility, `resilience_multi` |
+| `controllers.py` | deterministic controllers (Fixed / Lyapunov) — the **baselines** |
+| `metrics.py` | resilience P, benign-served & botnet-blocked rates, utility, efficiency, attach-latency, `resilience_multi` |
 
 ### `agents/` — the agentic control layer (the "brain")
 | File | Role |
