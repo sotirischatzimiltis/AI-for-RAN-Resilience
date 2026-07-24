@@ -42,15 +42,14 @@ the traffic timeline. All plain dataclasses (pure data + a few derived helpers).
 | &nbsp;&nbsp;`.service_time_ms()` | Mean service time of one attach = `proc_total_ms + M · oneway_delay_ms`. |
 | &nbsp;&nbsp;`.service_rate()` | Per-server rate μ (UEs/s) = `1000 / service_time_ms`. |
 | `open_ran_arch()` | Builder: `ArchConfig` with `oneway=1.60 ms` (Open RAN 7.2x split + F1). |
-| `monolithic_arch()` | Builder: `oneway=0.25 ms` (monolithic Split-7 baseline). |
-| `RRCConfig` | Retry policy. `t300_ms` (T300 guard timer, 1000 ms), `max_attempts` (5), `backoff_ms` (extra wait before retry, 0). |
-| `StormPhase` | One constant-rate traffic interval: `t_start`, `t_end`, `benign_rate`, `botnet_rate`, `label`. |
-| `TrafficConfig` | Ordered list of `StormPhase`s = the whole traffic profile. |
+| `RRCConfig` | Retry policy. `t300_ms` (T300 guard timer, 1000 ms), `max_attempts` (5), `backoff_ms` (extra wait before a benign retry, drawn `U(0, 500)` ms → benign retry period 1000–1500 ms). |
+| `TrafficPhase` | One constant-rate traffic interval: `t_start`, `t_end`, `benign_rate`, `botnet_rate`, `label`. |
+| `TrafficConfig` | Ordered list of `TrafficPhase`s = the whole traffic profile. |
 | &nbsp;&nbsp;`.horizon()` | Total scenario duration (largest phase end time). |
 | &nbsp;&nbsp;`.rates_at(t)` | The `(benign, botnet)` arrival rates active at time `t`. |
 | &nbsp;&nbsp;`.storm_windows()` | Reduces the phases to `[(t0, td), …]` — the merged windows where load is elevated. Ground-truth "when the storms were," used for scoring. |
-| `SimConfig` | Top-level config bundling `arch` + `rrc` + `traffic` plus run knobs: `c0`/`c_max` (initial/max servers), `sample_dt_s`, `seed`, `realtime`/`rt_factor`, `botnet_attach_period_ms`, contention knobs (`compute_kappa`, `compute_rho_cap`), `server_provision_delay_s`. |
-| &nbsp;&nbsp;`.__post_init__` | Validates `compute_rho_cap ∈ [0, 1)` (a cap ≥ 1 would divide by zero in the contention model). |
+| `SimConfig` | Top-level config bundling `arch` + `rrc` + `traffic` plus run knobs: `c0`/`c_max` (initial/max servers, default `c0=2`), `telemetry_dt_s`/`control_dt_s` (both 1.0 s; CFG-12 split the old single `sample_dt_s`), `seed`, `realtime`/`rt_factor`, `botnet_attach_period_ms` (bot's impatient attach timeout, 200 ms), `benign_fp_alpha` (filter false-positive fraction, 0.05), contention knobs (`compute_kappa`, `compute_rho_cap`), `server_provision_delay_s` (server warm-up, 5.0 s). |
+| &nbsp;&nbsp;`.__post_init__` | Validates the run knobs: `compute_rho_cap ∈ [0, 1)`, `compute_kappa > c_max`, `benign_fp_alpha ∈ [0, 1]`, `c0 ≤ c_max`. |
 | `single_storm_traffic()` | The prior paper's scenario: 20 → 200 → 20 UEs/s, one benign-only storm. |
 | `multi_storm_traffic()` | Three storms of **growing** intensity with a botnet component (evolution demo). |
 | `multi_storm_flat_traffic()` | N **identical** storms on a compressed timeline — the fair variant for the LLM bake-off and learning curve (later-storm gains are attributable to learning, not an easier storm). |
@@ -66,9 +65,9 @@ signaling storm self-amplify.
 ### Data records
 | Component | What it is / does |
 |---|---|
-| `TelemetrySample` | One state snapshot at time `t`: `lam_current` (arrival rate), `queue_len`, `busy`, `in_system`, `c` (servers online), `c_target` (commanded), plus cumulative counters (`completed`, `failed`, `retries`, `arrivals`, `malicious_arrivals`, `malicious_dropped`). One is appended every `sample_dt_s`. |
-| `Stats` | Whole-episode accounting. Cumulative counters split by class (`benign_completed/failed`, `malicious_dropped/failed`) so we can tell "real users served" from "botnet blocked". Also three **index-aligned** per-success lists: `completion_delays` (attach latency ms), `completion_times` (when), `completion_benign` (was it a real user) — the raw material for latency-under-storm. |
-| `_Attempt` | One attach **attempt** (a UE spawns a fresh one per retry). Fields: `ue_id`, `malicious`, `served_evt` (SimPy event the server fires on success), `abandoned` (T300 expired), `in_service` (a server took it). `abandoned`+`in_service` resolve the timeout-vs-pickup race so each attempt is counted once. |
+| `TelemetrySample` | One state snapshot at time `t`: `lam_current` (arrival rate), `queue_len`, `busy`, `in_system`, `c_online` (servers online), `c_target` (commanded), plus cumulative counters (`completed`, `failed`, `retries`, `arrivals`, `malicious_arrivals`, `malicious_dropped`). One is appended every `telemetry_dt_s`. |
+| `Stats` | Whole-episode accounting. Counters split by class so we can tell "real users served" from "botnet blocked": `benign_arrivals/completed/failed/dropped` and `malicious_arrivals/dropped/failed`. Every denial is exactly one of four kinds (`benign_failed`, `benign_dropped`, `malicious_failed`, `malicious_dropped`) — reconciled by `_check_invariants`. Also three **index-aligned** per-success lists: `completion_delays` (attach latency ms), `completion_times` (when), `completion_benign` (was it a real user) — the raw material for latency-under-storm. |
+| `_Attempt` | One attach **attempt** (a UE spawns a fresh one per retry). Fields: `ue_id`, `malicious`, `served_event` (SimPy event the server fires on success), `abandoned` (the attach timer expired — T300 for benign, the shorter impatient period for bots), `in_service` (a server took it). `abandoned`+`in_service` resolve the timeout-vs-pickup race so each attempt is counted once. |
 
 ### `StormSim` — the engine object
 | Method | What it does |
@@ -80,14 +79,15 @@ signaling storm self-amplify.
 | `_signal()` | Re-arms the dispatcher wake event (one-shot SimPy event pattern). |
 | `_arrival_process()` | **Process 1.** Poisson arrivals of benign + botnet UEs per the traffic schedule (or a live override). |
 | `_spawn_ue(malicious)` | Creates one UE's attach process and bumps the arrival counter. |
-| `_ue_attach(...)` | **A single UE's lifecycle:** admission filter (drops malicious per `malicious_drop_prob`), then up to `max_attempts` attempts racing service against the T300 timer; on success records latency; on exhaustion records a class-tagged failure. |
+| `_ue_attach(...)` | **A single UE's lifecycle:** admission filter (drops malicious at `malicious_drop_prob`, and benign at `benign_fp_alpha · malicious_drop_prob` — false positives, SIM-2), then up to `max_attempts` attempts racing service against the attach timer (benign wait out `T300` + backoff; bots use the shorter impatient `botnet_attach_period_ms`); on success records latency; on exhaustion records a class-tagged failure. |
 | `_dispatcher()` | **Process 2.** Assigns waiting attempts to free servers whenever `busy < c_online`. |
-| `_provisioning_manager()` | **Process 3.** Reconciles `c_online` toward the commanded `c`: scale-up is gradual (`server_provision_delay_s` per server, one at a time), scale-down is immediate. |
-| `_serve(att)` | Holds a server for `_service_time()`, then fires `att.served_evt` (unless abandoned). |
+| `_provisioning_manager()` | **Process 3.** Reconciles `c_online` toward the commanded `c_target`: scale-up is gradual (`server_provision_delay_s` per server, one at a time), scale-down is immediate. |
+| `_serve(att)` | Holds a server for `_service_time()`, then fires `att.served_event` (unless abandoned). |
 | `_service_time()` | Exponential service time; if `compute_kappa` is set, inflates the processing component by the processor-sharing factor `1/(1-ρ_c)` (shared-compute contention). |
-| `_telemetry_process()` | **Process 4.** Appends a `TelemetrySample` every `sample_dt_s`. |
-| `run(until, controller)` | Runs the sim to the horizon; if a `controller` is given, drives it via `_control_loop`. Returns the telemetry list. |
-| `_control_loop(controller)` | Calls `controller.step(sim, latest_sample)` every `sample_dt_s`. |
+| `_telemetry_process()` | **Process 4.** Appends a `TelemetrySample` every `telemetry_dt_s`. |
+| `run(until, controller)` | Runs the sim to the horizon; if a `controller` is given, drives it via `_control_loop`; asserts `_check_invariants` at the end. Returns the telemetry list. |
+| `_check_invariants()` | End-of-run sanity checks (SIM-11): the four denial classes sum to `failed`, and the three per-success lists stay index-aligned with `completed`. |
+| `_control_loop(controller)` | Calls `controller.step(sim, latest_sample)` every `control_dt_s`. |
 
 ---
 
@@ -99,9 +99,9 @@ compared against.
 
 | Component | What it does |
 |---|---|
-| `lyapunov_optimal_c(s, mu, c_max, util_p, lam, V, W)` | Pure function: integer search for the server count minimizing the **drift-plus-penalty** objective `Lq·(λ−cμ) + ½(λ−cμ)² − V·u(c) + W·c`. Shared by the controller and the Near-RT loop. |
+| `lyapunov_optimal_c(s, mu, c_max, util_p, lam, V, W)` | Pure function: integer search for the server count minimizing the **normalised** drift-plus-penalty objective `qₙ·aₙ + ½aₙ² − V·u(c) + W·(c/c_max)`, with `aₙ = λ/μ − c` (net arrivals in server units) and `qₙ = L_q/L_q,max` (CTL-2). Normalising puts every term on an O(1) scale so `V`/`W` actually bind — on the old raw scale they were inert. Shared by the controller and the Near-RT loop. |
 | `FixedController(c)` | Constant server count (`Static c=1/8/16` baselines). |
-| `LyapunovController(V, W, util_p)` | Dynamic `c(t)` from the drift-plus-penalty optimum each tick. `_lambda_estimate` returns the current arrival rate (a forecast variant could look ahead). |
+| `LyapunovController(V, W, util_p, use_measured)` | Dynamic `c(t)` from the normalised optimum each tick. `_lambda_estimate` returns the scheduled arrival rate, or — when `use_measured=True` (CTL-3) — the rate inferred from observed attempts, which sees the retry-amplified load. |
 
 ---
 
@@ -142,9 +142,9 @@ from sim.simulator import StormSim
 from sim.controllers import LyapunovController
 from sim.metrics import resilience_multi, UtilityParams
 
-cfg = SimConfig(arch=open_ran_arch(), traffic=single_storm_traffic(), c0=1, c_max=16)
+cfg = SimConfig(arch=open_ran_arch(), traffic=single_storm_traffic(), c0=2, c_max=16)
 sim = StormSim(cfg)
-sim.run(controller=LyapunovController(V=1000, W=1))
+sim.run(controller=LyapunovController(V=1, W=1))   # V/W are O(1) after CTL-2 normalisation
 
 storms = cfg.traffic.storm_windows()
 print(resilience_multi(sim.telemetry, sim.mu_single, UtilityParams(), storms))
