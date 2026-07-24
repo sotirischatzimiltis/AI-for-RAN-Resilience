@@ -1,21 +1,18 @@
 from __future__ import annotations
-
 import math
 from dataclasses import dataclass
 from typing import List, Sequence
-
 from .simulator import TelemetrySample
 
 def benign_success_rate(stats) -> float:
-    # Fraction of LEGITIMATE users that eventually attached:
-    # benign_completed / (benign_completed + benign_failed).
-    served = stats.benign_completed + stats.benign_failed
-    return stats.benign_completed / served if served > 0 else 1.0
+    # Fraction of LEGITIMATE users that eventually attached. Includes, completed, failed and dropped at admission.
+    outcomes = stats.benign_completed + stats.benign_failed + getattr(stats, "benign_dropped", 0)
+    return stats.benign_completed / outcomes if outcomes > 0 else 1.0
 
 def per_storm_blocked(telemetry, storms) -> list[float]:
-    #Fraction of botnet UEs dropped at admission DURING each storm window, from
-    # the cumulative counters in telemetry.
-    #For each (t0, td): (dropped[td]-dropped[t0]) / (arrivals[td]-arrivals[t0]).
+    # Fraction of botnet UEs dropped at admission DURING each storm window, from the
+    # cumulative counters in telemetry. For each (t0, td):
+    #   (dropped[td] - dropped[t0]) / (arrivals[td] - arrivals[t0]).
     def counter_value_at(t, field):
         val = 0                          # default: t precedes the first sample -> 0
         for s in telemetry:              # scan snapshots in time order
@@ -46,17 +43,17 @@ def malicious_blocked_rate(stats) -> float:
     return mal_denied / denom if denom > 0 else 0.0
 
 def avg_servers(telemetry) -> float:
-    """Mean number of ONLINE servers over the episode — a capacity-cost proxy. A static
-    controller sits at its fixed count; a dynamic one scales down in calm periods, so a
+    """Mean number of ONLINE servers over the episode — a capacity-cost proxy. 
     lower mean at equal resilience means the same protection for less capacity."""
-    cs = [s.c for s in telemetry] # list of server counts over time
+    cs = [s.c_online for s in telemetry] # list of server counts over time
     return sum(cs) / len(cs) if cs else 0.0
 
-def _percentile(vals: Sequence[float], p: float) -> float:
+def _percentile(vals: Sequence[float], p: float) -> float: # calculate the p-th percentile of a list of values using 
+    # PERCENTILE IS A RANKED THRESHOLD. IS THE VALUE THAT P% OF THE DATA IS AT OR BELOW. 
     # linear-interpolation percentile (numpy's default method). vals need not be sorted.
     if not vals:
         return 0.0
-    xs = sorted(vals)
+    xs = sorted(vals) # sort the values to find the percentile buildin function returns sorted list 
     if len(xs) == 1:
         return xs[0]
     k    = (len(xs) - 1) * (p / 100.0)   # fractional rank of the p-th percentile
@@ -67,10 +64,8 @@ def _percentile(vals: Sequence[float], p: float) -> float:
 
 def attach_latency_stats(stats, storms=None, benign_only: bool = True) -> dict:
     """End-to-end attach latency (ms) of successful UEs — mean / p50 / p95 / count.
-
     Latency is measured from a UE's ORIGINAL arrival to completion, so it includes
     every T300 timeout, retry and queue wait — the real user-experienced attach time.
-
     - storms=None            -> whole episode.
     - storms=[(t0,td),...]   -> ONLY UEs that COMPLETED inside a storm window
                                 (the 'latency-under-storm' view; needs completion_times).
@@ -78,27 +73,30 @@ def attach_latency_stats(stats, storms=None, benign_only: bool = True) -> dict:
                                 REAL users' experience (needs completion_benign).
 
     Returns {"n", "mean_ms", "p50_ms", "p95_ms"}; zeros if no matching completions."""
+    # the three index-aligned per-success lists (see Stats): delays[i], times[i] and
+    # benign[i] all describe the SAME completed UE. getattr(...) tolerates older stats
+    # objects that predate times/benign (falls back to empty, disabling those filters).
     delays = list(stats.completion_delays)
     times  = list(getattr(stats, "completion_times", []) or [])
     benign = list(getattr(stats, "completion_benign", []) or [])
     n = len(delays)
 
-    idx = list(range(n))                                  # start with every successful attach
-    if benign_only and len(benign) == n:                 # keep only real users (if class recorded)
+    idx = list(range(n))                                 # candidate completions: start with all, then narrow
+    if benign_only and len(benign) == n:                 # drop bots that slipped through (len check = class was recorded)
         idx = [i for i in idx if benign[i]]
-    if storms and len(times) == n:                        # keep only completions inside a storm window
-        def _in_storm(t):
+    if storms and len(times) == n:                       # drop completions outside every storm window
+        def _in_storm(t):                                # True if t falls inside any (t0, td) storm
             return any(t0 <= t <= td for (t0, td) in storms)
         idx = [i for i in idx if _in_storm(times[i])]
 
-    sample = [delays[i] for i in idx]
-    if not sample:
+    sample = [delays[i] for i in idx]                    # the surviving delays we actually report on
+    if not sample:                                       # nothing matched the filters
         return {"n": 0, "mean_ms": 0.0, "p50_ms": 0.0, "p95_ms": 0.0}
     return {
-        "n":       len(sample),
-        "mean_ms": round(sum(sample) / len(sample), 1),
-        "p50_ms":  round(_percentile(sample, 50), 1),
-        "p95_ms":  round(_percentile(sample, 95), 1),   # tail latency — what the worst-served users felt
+        "n":       len(sample),                          # how many completions this stat is over
+        "mean_ms": round(sum(sample) / len(sample), 1),  # average attach time
+        "p50_ms":  round(_percentile(sample, 50), 1),    # median — the typical user's experience
+        "p95_ms":  round(_percentile(sample, 95), 1),    # tail — what the worst-served 5% felt
     }
 
 def resilience_efficiency(P: float, avg_servers: float, c_max: float) -> float:
@@ -127,12 +125,15 @@ def malicious_filtered_rate(stats) -> float:
 
 @dataclass
 class UtilityParams:
+    # Defaults match runtime.UP (the operative scoring params), so a bare
+    # UtilityParams() is no longer the old degenerate lq_max=7000 footgun — the
+    # controller's utility (LyapunovController) and the resilience score now agree.
     wA: float = 0.5
     wB: float = 0.5
     kA: float = 0.5            # steepness on arrival-rate term
-    kB: float = 0.01           # steepness on queue-length term
+    kB: float = 0.004          # steepness on queue-length term (matches UP)
     mfracA: float = 0.75       # midpoint fraction of c*mu
-    lq_max: float = 7000.0
+    lq_max: float = 1500.0     # queue scale (matches UP); mB = 750 is reachable
     mfracB: float = 0.5        # midpoint fraction of lq_max
 
     def __post_init__(self):
@@ -141,21 +142,26 @@ class UtilityParams:
         # silently returning a utility (and hence resilience P) outside [0,1].
         if abs(self.wA + self.wB - 1.0) > 1e-9:
             raise ValueError(f"wA + wB must equal 1 (got {self.wA} + {self.wB} = {self.wA + self.wB})")
-        
+
+def _clamp_exp(x: float) -> float:
+    # guard math.exp against OverflowError for extreme queue lengths (math.exp raises
+    # above ~709). Clamping to +/-700 saturates the logistic to 0/1 as intended.
+    return max(-700.0, min(700.0, x))
+
 # method to calculate utility of a single telemetry sample, given the single-server service rate and utility parameters
 def utility(sample: TelemetrySample, mu_single: float, p: UtilityParams) -> float:
     """u(t) in [0,1]; higher = more stable/resilient"""
-    mA = sample.c * mu_single * p.mfracA
-    uA = 1.0 / (1.0 + math.exp(p.kA * (sample.lam_current - mA)))
+    mA = sample.c_online * mu_single * p.mfracA
+    uA = 1.0 / (1.0 + math.exp(_clamp_exp(p.kA * (sample.lam_current - mA))))
     mB = p.lq_max * p.mfracB
-    uB = 1.0 / (1.0 + math.exp(p.kB * (sample.queue_len - mB)))
+    uB = 1.0 / (1.0 + math.exp(_clamp_exp(p.kB * (sample.queue_len - mB))))
     return p.wA * uA + p.wB * uB
 
 # compute the utility time series for a sequence of telemetry samples
 def utility_series(telemetry: Sequence[TelemetrySample],mu_single: float, p: UtilityParams) -> List[float]:
     return [utility(s, mu_single, p) for s in telemetry]
 
-@dataclass
+@dataclass(frozen=True)   # MET-7: frozen so the shared default-arg instance can't be mutated
 class ResilienceWeights:
     w1: float = 0.4   # absorption
     w2: float = 0.4   # adaptation
@@ -186,6 +192,8 @@ def resilience_score(telemetry: Sequence[TelemetrySample],
                      u_des: float = None,
                      dt_des: float = 60.0,
                      recovery_frac: float = 0.95,
+                     hold_window: float = 30.0,          # MET-8: promoted from a hardcoded constant
+                     t_limit: float = float("inf"),      # MET-4: cap the recovery scan (usually next storm's t0)
                      weights: ResilienceWeights = ResilienceWeights()) -> dict:
     """
     A3RT resilience metric P (eq. 8).
@@ -211,13 +219,16 @@ def resilience_score(telemetry: Sequence[TelemetrySample],
         u_des = (sum(pre) / len(pre)) if pre else 1.0
 
     # ---- recovery time tr: when did utility climb back and STAY back? ----
-    # tr defaults to the last sample (i.e. "never recovered within the episode").
-    tr = ts[-1]
+    # MET-4: only scan up to t_limit (the next storm's onset), so recovery from one
+    # storm is never "found" inside the next one. If none is confirmed by then, tr is
+    # CENSORED at scan_end rather than measured.
+    scan_end = min(t_limit, ts[-1])
+    tr = scan_end                    # default: not recovered within [td, scan_end]
     target = recovery_frac * u_des   # counts as recovered once u reaches 95% of baseline
-    hold_window = 30.0               # ...and stays there for this many seconds (ignore brief dips)
     for i, t in enumerate(ts):
-        if t >= td and us[i] >= target:                 # after storm end, first time u hits target
-            held = [u for tt, u in zip(ts, us) if t <= tt <= t + hold_window]  # the next 30s of u
+        if td <= t <= scan_end and us[i] >= target:     # after storm end, first time u hits target
+            w_hi = min(t + hold_window, scan_end)       # ...and holds for hold_window (clamped to scan_end)
+            held = [u for tt, u in zip(ts, us) if t <= tt <= w_hi]
             if held and min(held) >= target:            # if u never dips below target in that window
                 tr = t                                  # ...this is a genuine recovery -> record it
                 break
@@ -279,15 +290,17 @@ def resilience_multi(telemetry: Sequence[TelemetrySample],
     us = utility_series(telemetry, mu_single, util_p)
 
     per = []                                 # one result dict per storm
-    for (t0, td) in storms:                  # storms = [(start, end), ...] from storm_windows()
+    for k, (t0, td) in enumerate(storms):    # storms = [(start, end), ...] from storm_windows()
         # LOCAL baseline: mean utility over the 50s of calm just BEFORE this storm.
         # Scoring each storm against its own recent-normal (not the global start) means
         # storm 2 is judged fresh, not penalised for storm 1's leftover degradation.
         pre = [u for t, u in zip(ts, us) if t0 - baseline_lookback_s <= t < t0]
         u_des = (sum(pre) / len(pre)) if pre else None   # None -> resilience_score auto-calibrates
+        # MET-4: cap this storm's recovery scan at the NEXT storm's onset (inf for the last).
+        t_next = storms[k + 1][0] if k + 1 < len(storms) else float("inf")
         # score this one storm with its own u_des, reusing the single-window scorer
         r = resilience_score(telemetry, mu_single, util_p, t0=t0, td=td,
-                             u_des=u_des, weights=weights)
+                             u_des=u_des, t_limit=t_next, weights=weights)
         # keep just the reportable fields, tagged with this storm's window
         per.append({"t0": t0, "td": td, **{k: r[k] for k in
                     ("P", "absorption", "adaptation", "trec", "recovery_time")}})
