@@ -13,7 +13,7 @@ from the outside.
               └───────────────────┬────────────────────────┘
                                   │ builds
                                   ▼
-   set_servers() ───────►  ┌─────────────────────────┐  ──► telemetry: [TelemetrySample]
+   set_servers() ───────►   ┌─────────────────────────┐  ──► telemetry: [TelemetrySample]
    set_malicious_drop_prob ►│      simulator.py       │  ──► stats: Stats (counters + latency)
                             │  StormSim (SimPy engine)│
    controllers.py  ────────►│  run(controller=...)    │
