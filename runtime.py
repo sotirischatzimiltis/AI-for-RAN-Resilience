@@ -56,7 +56,7 @@ class SimHost:
         rt_factor: float = 1.0,
         t_post:    float | None = None,   # override post-storm duration (single_storm only)
         compute_kappa:   float | None = None,  # shared-compute contention (None = off)
-        provision_delay: float = 0.0,          # server warm-up delay (s, 0 = instant)
+        provision_delay: float = 5.0,          # server warm-up delay (s); matches CFG-1 default. 0 = instant
     ) -> str:
         if self._thread and self._thread.is_alive():
             return "episode already running — call ignored"
@@ -76,8 +76,7 @@ class SimHost:
             arch=open_ran_arch(),
             rrc=RRCConfig(t300_ms=1000, max_attempts=5),
             traffic=traffic,
-            c0=1, c_max=c_max, lq_max=LQMAX,
-            sample_dt_s=0.5, seed=seed,
+            c0=2, c_max=c_max, seed=seed,
             realtime=True, rt_factor=rt_factor,
             compute_kappa=compute_kappa,
             server_provision_delay_s=provision_delay,

@@ -32,7 +32,7 @@ from collections import deque
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider, Button
 
-from sim.config import SimConfig, open_ran_arch, RRCConfig, TrafficConfig, StormPhase
+from sim.config import SimConfig, open_ran_arch, RRCConfig, TrafficConfig, TrafficPhase
 from sim.simulator import StormSim
 from sim.metrics import UtilityParams, utility
 
@@ -61,8 +61,8 @@ class SimRunner:
         cfg = SimConfig(
             arch=open_ran_arch(),
             rrc=RRCConfig(t300_ms=self.t300, max_attempts=5),
-            c0=self.target_c, c_max=16, lq_max=LQMAX,
-            traffic=TrafficConfig([StormPhase(0, 10_000, self.benign, self.botnet)]),
+            c0=self.target_c, c_max=16,
+            traffic=TrafficConfig([TrafficPhase(0, 10_000, self.benign, self.botnet)]),
             realtime=True, rt_factor=1.0, seed=int(time.time()) % 10000,
         )
         sim = StormSim(cfg)
@@ -135,7 +135,7 @@ def main():
         hist["t"].append(s.t)
         hist["q"].append(s.queue_len)
         hist["u"].append(utility(s, sim.mu_single, UP))
-        hist["c"].append(s.c)
+        hist["c"].append(s.c_online)
         hist["lam"].append(s.lam_current)
         tmax = hist["t"][-1]
         tmin = max(0.0, tmax - WINDOW_S)
