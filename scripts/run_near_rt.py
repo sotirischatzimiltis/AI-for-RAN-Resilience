@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runtime import host as sim_host
 from agents.near_rt_control_loop import run_control_loop
-from shared.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, RunStats
 
 
 async def storm_signal(policy: SharedPolicy, stop_event: asyncio.Event, interval: float) -> None:
@@ -51,7 +51,7 @@ async def storm_signal(policy: SharedPolicy, stop_event: asyncio.Event, interval
 
 async def main(args: argparse.Namespace) -> None:
     policy     = SharedPolicy()
-    stats      = EpisodeStats()
+    stats      = RunStats()
     stop_event = asyncio.Event()
 
     # 1. start the simulation episode (background thread inside runtime.host)

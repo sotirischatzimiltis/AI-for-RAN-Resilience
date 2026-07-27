@@ -54,9 +54,9 @@ from scripts.run import resolve_model                   # turn a model string in
 # Low-level building blocks — this experiment runs its OWN self-contained episode
 # (below) rather than orchestrator.run_episode, so the full pipeline stays decoupled
 # from the bake-off. It reuses only the deterministic loops + the judge loop.
-from agents.non_rt_agent import build_non_rt_agent, run_assessment_loop  # build the judge + run its loop
+from agents.non_rt_agent import build_non_rt_agent, compose_system_prompt, run_assessment_loop  # build the judge + run its loop
 from agents.near_rt_control_loop import run_control_loop                 # the deterministic 1 Hz fast loop
-from shared.policy import SharedPolicy, EpisodeStats     # judge↔loop handoff + per-episode counters/usage
+from shared.policy import SharedPolicy, RunStats     # judge↔loop handoff + per-episode counters/usage
 from runtime import host as sim_host, UP                 # the sim host (owns the episode) + utility params
 from sim.metrics import resilience_multi, benign_success_rate, malicious_blocked_rate  # ground-truth scoring
 
@@ -222,9 +222,13 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
     On: only Lyapunov capacity (the base controller) + the model's own storm_active /
     drop calibration. That isolates raw model judgment.
     """
-    non_rt = build_non_rt_agent(model_obj, system_prompt=_MC_PROMPT)
+    # bare judge: anticipation tools OFF, so the composed prompt lists only get_episode_stats
+    non_rt = build_non_rt_agent(
+        model_obj,
+        system_prompt=compose_system_prompt(_MC_PROMPT, calendar_enabled=False, forecast_enabled=False),
+    )
     policy = SharedPolicy()
-    stats  = EpisodeStats()
+    stats  = RunStats()
 
     # bare configuration: telemetry-only detection (the MCP tools read these gates)
     sim_host.calendar = []
@@ -263,8 +267,10 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
         "non_rt_assessments":     stats.non_rt_assessments,
         "non_rt_errors":          stats.non_rt_errors,
         "llm_requests":           stats.llm_requests,
-        "llm_input_tokens":       stats.llm_input_tokens,
-        "llm_output_tokens":      stats.llm_output_tokens,
+        "llm_input_tokens":       stats.llm_input_tokens,       # episode total
+        "llm_output_tokens":      stats.llm_output_tokens,      # episode total
+        "mean_input_tokens":      round(stats.llm_input_tokens  / max(1, stats.non_rt_assessments), 1),   # per assessment
+        "mean_output_tokens":     round(stats.llm_output_tokens / max(1, stats.non_rt_assessments), 1),   # per assessment
         "mean_assessment_latency_s": round(stats.llm_latency_s / max(1, stats.non_rt_assessments), 2),
     }
 
@@ -357,7 +363,8 @@ async def sweep(args) -> None:
         per_scn: dict[str, dict] = {}
         for scenario in scenarios:
             P, benign, blocked, errs = [], [], [], []
-            in_tok, out_tok, lat = [], [], []
+            in_tok, out_tok, lat = [], [], []          # episode totals (per seed)
+            in_tok_a, out_tok_a = [], []               # per-assessment means (per seed)
             for seed in seeds:
                 try:
                     r = await _bare_judge_run(model_obj, scenario, seed, args)
@@ -367,6 +374,7 @@ async def sweep(args) -> None:
                 P.append(r["final_P"]); benign.append(r["benign_success_rate"])
                 blocked.append(r["malicious_blocked_rate"]); errs.append(r["non_rt_errors"])
                 in_tok.append(r["llm_input_tokens"]); out_tok.append(r["llm_output_tokens"])
+                in_tok_a.append(r["mean_input_tokens"]); out_tok_a.append(r["mean_output_tokens"])
                 lat.append(r["mean_assessment_latency_s"])
                 print(f"[bakeoff] [{tier:5s} rsn={mode:4s}] {slug.split(':')[-1]:30s} {scenario:16s} "
                       f"seed={seed}  P={r['final_P']:.3f} benign={r['benign_success_rate']:.3f} "
@@ -381,7 +389,9 @@ async def sweep(args) -> None:
                 "benign_mean": statistics.mean(benign), "benign_std": _sd(benign),
                 "blocked_mean": statistics.mean(blocked), "blocked_std": _sd(blocked),
                 "errors_total": sum(errs),
-                "in_tokens_mean": mean_in, "out_tokens_mean": mean_out,
+                "in_tokens_mean": mean_in, "out_tokens_mean": mean_out,            # per-episode totals (mean over seeds)
+                "in_tokens_per_asmt": statistics.mean(in_tok_a),                    # per-assessment (mean over seeds)
+                "out_tokens_per_asmt": statistics.mean(out_tok_a),
                 "usd_per_episode": _usd(slug, mean_in, mean_out),
                 "mean_latency_s": statistics.mean(lat),
             }

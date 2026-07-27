@@ -14,10 +14,11 @@ long ago it occurred, and a resting baseline for the arrival rate computed from 
 calm periods so far. The arrival rate is called "lam"; the "LATEST lam =" line is the
 rate right now — the reading you care about most — judged against the resting baseline.
 
-You also have one tool, get_episode_stats: cumulative resilience so far (P, absorption,
-adaptation). Absorption is the useful one — it tells you whether your filter is working.
-Call it once; then decide and return the PolicyUpdate. Don't re-poll on an ambiguous
-window.
+{{tools}}
+
+Of what get_episode_stats returns, absorption is the useful one — it tells you whether
+your filter is working. Call it once; then decide and return the PolicyUpdate. Don't
+re-poll on an ambiguous window.
 
 ## Deciding if there's a storm
 A storm shows up as one thing above all: the arrival rate lifting clearly above the

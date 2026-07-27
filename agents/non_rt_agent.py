@@ -1,21 +1,12 @@
 """
 Non-RT-Agent — the storm judge in the decoupled (two-agent) design.
 
-Runs asynchronously on its own cadence (a few seconds), ABOVE the deterministic
-1 Hz fast control loop, which it never blocks. Each assessment it:
-  • is fed a summary of the recent telemetry WINDOW (trends, not one instant);
-  • READS up to three MCP tools — get_episode_stats (cumulative resilience),
-    get_calendar (known scheduled load events) and get_forecast (short-term load
-    prediction). Anticipation tools (calendar/forecast) can be ablated off, leaving
-    just get_episode_stats (the bare-judge configuration used in Experiment 1);
-  • WRITES a PolicyUpdate into shared policy: the operational levers
-    (storm_active, malicious_drop_prob) every cycle, plus the slow tuning knobs
-    (queue_hold_threshold, lyapunov_V, lyapunov_W) when it sets tighten=True —
-    e.g. raising lyapunov_V to pre-provision ahead of a scheduled event.
-
-The fast loop reads that policy to gate the malicious-UE filter and shape its
-Lyapunov server-count optimisation; capacity itself stays reactive and never
-waits on this agent.
+Runs async on its own slow cadence, ABOVE the 1 Hz fast loop (never blocks it).
+Each assessment: reads a telemetry-WINDOW summary (trends) plus up to three MCP
+tools (get_episode_stats always; get_calendar/get_forecast when not ablated), and
+writes a PolicyUpdate into shared policy — storm_active + malicious_drop_prob every
+cycle, plus the slow tuning knobs (V, W, queue_hold) when tighten=True. The fast
+loop reads that policy to gate the malicious-UE filter; capacity stays reactive.
 """
 
 from __future__ import annotations
@@ -31,30 +22,22 @@ from pydantic_ai.usage import UsageLimits
 
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
-from shared.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, RunStats
 
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
 
-# Bound each assessment so a chatty model can't loop tool calls until it hits the
-# framework's default request_limit of 50 (seen stalling an assessment ~60s).
-# Sized with margin above normal use — 3 read tools + the structured-output
-# submission + a little slack (gpt-4o-mini was observed using 5-6 tool calls) —
-# while still well under a true runaway.
+# Assign a usage limit to each assessment, so a runaway model can't eat the whole episode's budget. The
+# model may call the tools multiple times, but the total usage must stay under this cap.
 ASSESSMENT_LIMITS = UsageLimits(request_limit=10, tool_calls_limit=8)
 
-# Per-HTTP-request timeout, provider-native via pydantic-ai model settings — flows to
-# the OpenAI/httpx client OpenRouter uses, so a hung connection fails here instead of
-# waiting out the client's ~600s default (which was blocking whole episodes: observed
-# 3 stalls of ~600s in one sweep). Well above normal use (<=~26s even for reasoning
-# models); a timed-out request is counted as an error and the assessment is skipped.
-# NOTE: if per-request timeouts still stack across tool-call retries and an episode
-# stalls, wrap the agent.run() below in an asyncio.wait_for(...) total backstop.
+# The model's per-request timeout (provider-native) — the LLM call may take longer than this if it calls tools, but the LLM itself must return within this cap.
 REQUEST_TIMEOUT_S = 60.0
 
-_PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+_PROMPTS_DIR = Path(__file__).parent.parent / "prompts" 
 SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
 
-
+# STRUCTURED OUTPUT PolicyUpdate is the structured output the model must return each assessment.
+# The fast loop reads this to gate the malicious-UE filter and shape its Lyapunov server-count optimisation.
 class PolicyUpdate(BaseModel):
     storm_active:         bool  = Field(description="True if a signaling storm is active RIGHT NOW")
     malicious_drop_prob:  float = Field(ge=0.0, le=1.0,
@@ -65,37 +48,87 @@ class PolicyUpdate(BaseModel):
                                         description="Queue length below which the fast loop may scale servers "
                                                     "down; higher holds capacity longer during drain. Applied "
                                                     "only when tighten=True")
-    lyapunov_V:           float = Field(ge=0.0, le=100.0, default=1.0,
-                                        description="Lyapunov utility/performance weight (normalised O(1) scale, "
-                                                    "nominal 1 = load-tracking). Higher -> provision MORE servers "
-                                                    "(favour QoS); raise toward ~20 ahead of a forecast storm or "
-                                                    "scheduled mass event to pre-provision. Applied only when tighten=True")
-    lyapunov_W:           float = Field(ge=0.0, le=100.0, default=1.0,
-                                        description="Lyapunov server-cost weight (O(1), nominal 1). Higher -> "
-                                                    "provision FEWER servers (favour cost). Applied only when tighten=True")
+    lyapunov_V:           float = Field(ge=0.0, le=20.0, default=1.0,
+                                        description="Lyapunov utility/QoS weight (nominal 1 = load-tracking). Higher "
+                                                    "favours QoS -> provision MORE servers; raise it ahead of a forecast "
+                                                    "storm or scheduled mass event to pre-provision (the effect grows "
+                                                    "with V but saturates around ~10). Applied only when tighten=True")
+    lyapunov_W:           float = Field(ge=0.0, le=20.0, default=1.0,
+                                        description="Lyapunov server-cost weight (nominal 1). Higher favours cost -> "
+                                                    "provision FEWER servers. Applied only when tighten=True")
     tighten:              bool  = Field(description="True only if the slow tuning knobs (queue_hold_threshold, "
                                                     "lyapunov_V, lyapunov_W) should be applied")
     reasoning:            str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
+# Which read tools are live this episode — a SYSTEM-prompt fact (a capability), not
+# per-cycle evidence. get_episode_stats is always on; the anticipation tools are
+# omitted when ablated (bare-judge bake-off, or --no-forecast/--no-calendar), where
+# they return "disabled" and naming them would just waste tool calls/tokens.
+def _tool_availability_text(calendar_enabled: bool = True, forecast_enabled: bool = True) -> str:
+    tools = [
+        "get_episode_stats — cumulative resilience (P, absorption, adaptation). "
+        "Absorption tells you whether your filter strength has been working."
+    ]
+    if calendar_enabled:
+        tools.append(
+            "get_calendar — KNOWN scheduled load events near now "
+            "(e.g. a stadium egress, a planned mass registration)."
+        )
+    if forecast_enabled:
+        tools.append(
+            "get_forecast — a short-term prediction of where load is heading (arrival rate, "
+            "retry/fail rate, queue: trend, slope, confidence); it catches unscheduled ramps."
+        )
+    return ("TOOLS AVAILABLE THIS EPISODE (call the ones you need before deciding):\n  - "
+            + "\n  - ".join(tools))
 
+# function to compose the system prompt based on available tools
+def compose_system_prompt(
+    base: str | None = None,
+    *,
+    calendar_enabled: bool = True,
+    forecast_enabled: bool = True,
+    variables: dict[str, str] | None = None,
+) -> str:
+    """Assemble the judge's system prompt ONCE at experiment start (it stays constant
+    for the whole run) by filling named {{slots}} in a template.
+
+    The template (a .md file, defaults to non_rt.md) marks WHERE each dynamic piece
+    goes with a placeholder like {{tools}}:
+      • {{tools}}   -> the enabled-tool list (per calendar_enabled / forecast_enabled)
+      • {{<name>}}  -> filled from `variables` (e.g. {{scenario}}, {{posture}})
+    Placing tools in a slot lets each experiment control exactly where it appears,
+    instead of appending at the end. If a template has NO {{tools}} slot, the tool
+    list is appended at the end (back-compat)."""
+    template = (base or SYSTEM_PROMPT).strip()
+    slots = {"tools": _tool_availability_text(calendar_enabled, forecast_enabled)}
+    if variables:
+        slots.update(variables)                       # experiment-specific {{name}} -> value
+    for name, value in slots.items():
+        placeholder = "{{" + name + "}}"
+        if placeholder in template:
+            template = template.replace(placeholder, value)
+        elif name == "tools":
+            template = f"{template}\n\n{value}"        # no {{tools}} slot -> append
+    return template
+
+# BUILD THE NON-RT AGENT
 def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
-    toolset = MCPServerStreamableHTTP(MCP_URL)     # HTTP client for the MCP read tools
+    toolset = MCPServerStreamableHTTP(MCP_URL)     # Create HTTP client pointing to the MCP Server HTTP client for the MCP read tools
     return Agent(
-        model=model,                               # the LLM under test (Exp 1) / the campaign judge
+        model=model,                               # define the LLM to be used
         output_type=PolicyUpdate,                  # force structured output — the model MUST return a valid PolicyUpdate
-        toolsets=[toolset],                        # tools it may call (get_episode_stats, and forecast/calendar if enabled)
-        system_prompt=system_prompt or SYSTEM_PROMPT,  # caller-supplied prompt (Exp 1) or the full-system default
+        toolsets=[toolset],                        # provide the HTTP connection to the MCP server
+        # System prompt is composed ONCE by the caller (compose_system_prompt) and passed
+        # in whole; falls back to the bare base if a caller doesn't compose it.
+        system_prompt=system_prompt or SYSTEM_PROMPT,
     )
 
-
 def _resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> float:
-    """Estimate the cell's resting arrival rate as the LOWEST arrival-rate LEVEL the
-    cell actually sits at for a non-trivial share of the episode — the low mode of the
-    lam distribution. Unlike a fixed percentile this keys on the VALUE of the low
-    cluster, not on how often it occurs, so it stays correct even in a storm-dominant
-    episode (as long as the cell rests at all). Arrival rates are binned; brief
-    transition samples are ignored by requiring a bin to hold at least `min_frac` of the
-    busiest bin's count, then the lowest surviving bin is the resting level."""
+    """Estimate the cell's calm baseline lam — the reference the judge measures a
+    storm against. Returns the lowest arrival-rate bin the cell actually dwells in
+    (sparse transition bins ignored), so it stays valid even when the current window
+    is entirely inside a storm."""
     from collections import Counter
     lams = [s.lam_current for s in telemetry]
     if not lams:
@@ -104,7 +137,7 @@ def _resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> f
     floor  = max(1.0, min_frac * max(binned.values()))              # ignore sparse bins (< min_frac of the busiest)
     return float(min(b for b, c in binned.items() if c >= floor))    # lowest bin the cell actually dwells in = resting level
 
-
+# PART OF THE USER PROMPT  
 def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     """
     Summarise the last ~window_s of telemetry as TRENDS so the model can tell a
@@ -114,7 +147,7 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     """
     if not telemetry:
         return "No telemetry yet — episode may not have started."
-    t_now = telemetry[-1].t
+    t_now = telemetry[-1].t # current sim time (last sample)
     win   = [s for s in telemetry if s.t >= t_now - window_s]   # keep only the last window_s of samples
     if len(win) < 2:
         return f"Only {len(win)} sample(s) so far; system just started."
@@ -146,11 +179,11 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
 
     # coarse binned arrival-rate trajectory: split the window into n_bins equal slices and
     # report each slice's mean lam, so the model sees the SHAPE (ramp/plateau/decay), not noise
-    span = max(t1 - t0, 1e-6)
-    bins = []
+    span = max(t1 - t0, 1e-6) # get the winow span (guard against zero span if the window is tiny)
+    bins = [] # initialize bins 
     for i in range(n_bins):
-        lo, hi = t0 + span * i / n_bins, t0 + span * (i + 1) / n_bins   # this bin's time slice
-        vals   = [s.lam_current for s in win if lo <= s.t < hi]
+        lo, hi = t0 + span * i / n_bins, t0 + span * (i + 1) / n_bins   # get the start and end of the bin 
+        vals   = [s.lam_current for s in win if lo <= s.t < hi] # get the arrival rates in the bin
         bins.append(str(round(sum(vals) / len(vals))) if vals else "-")  # mean lam, or "-" if empty
     traj = " ".join(bins)
 
@@ -158,22 +191,24 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     # has a rest reference even when the current window is entirely inside a storm.
     baseline = _resting_lam(telemetry)
 
+    # Data-only summary: values + compact tags. The reasoning rules (LATEST lam drives
+    # the verdict, resting = rest reference, LEADING/LAGGING semantics) live in the system prompt.
     return (
         f"Window: last {t1 - t0:.0f}s ({len(win)} samples), now t={t_now:.0f}s\n"
-        f"  >>> LATEST lam = {lam1:.0f} UEs/s  (this is NOW; your storm verdict keys on this)\n"
-        f"  resting lam (calm baseline over the whole episode so far): ~{baseline:.0f} UEs/s  "
-        f"[the reference for 'rest' — valid even if this window has no calm]\n"
+        f"  LATEST lam = {lam1:.0f} UEs/s\n"
+        f"  resting lam (calm baseline, whole episode so far): ~{baseline:.0f} UEs/s\n"
         f"  arrival-rate lam over window: {lam0:.0f} -> {lam1:.0f} UEs/s ({lam_dir}); "
-        f"peak was {peak.lam_current:.0f} at t={peak.t:.0f}s ({since_peak:.0f}s ago, already past)  [LEADING]\n"
+        f"peak {peak.lam_current:.0f} at t={peak.t:.0f}s ({since_peak:.0f}s ago)  [LEADING]\n"
         f"  lam trajectory (bin means): {traj}\n"
         f"  queue_len: {q0} -> {q1} ({q_dir})  [LAGGING]\n"
         f"  retry-rate: {rr_first:.0f}/s -> {rr_second:.0f}/s ({rr_dir})  [LEADING]"
     )
 
-
-def _accumulate_usage(stats: EpisodeStats, result, elapsed: float) -> None:
+# Function that essentially counts how many tokens the model consumed, and how long it took, so we can estimate the cost.
+def _accumulate_usage(stats: RunStats, result, elapsed: float) -> None:
     """Fold one agent.run()'s token usage + wall latency into the episode stats.
-    Defensive across pydantic-ai usage-field names (input/output vs request/response)."""
+    Defensive across pydantic-ai usage-field names (input/output vs request/response).
+    """
     stats.llm_latency_s += elapsed
     try:
         u = result.usage()
@@ -189,13 +224,13 @@ def _accumulate_usage(stats: EpisodeStats, result, elapsed: float) -> None:
     stats.llm_input_tokens  += int(inp)
     stats.llm_output_tokens += int(out)
 
-
+# ONE FULL JUDGE CYCLE, runs the LLM , publishes the verdict and records the stats 
 async def _do_assessment(
-    agent:      Agent,
-    policy:     SharedPolicy,
-    assessment: int,
-    stats:      EpisodeStats | None,
-    window_s:   float = 40.0,
+    agent:      Agent, # provide the agent, from the build_non_rt_agent function
+    policy:     SharedPolicy, # provide the SharedPolicy object to publish
+    assessment: int, # what number this assessment is
+    stats:      RunStats | None,  # LLM meter to fold this call into (tokens/latency/errors); None = skip bookkeeping
+    window_s:   float = 40.0,         # how many seconds of telemetry the summary covers
 ) -> None:
     t0     = time.monotonic()                        # start of the WHOLE assessment (for asmt-latency stat)
     # turn the raw telemetry into the trend summary the model reasons over (never raw samples)
@@ -205,46 +240,36 @@ async def _do_assessment(
     note_line = (f"\nOPERATOR INSTRUCTION (from the network operator, honour it): {note}\n"
                  if note else "")
 
-    # Only instruct the model to call the tools that are actually enabled. When the
-    # anticipation tools are ablated (bare-judge bake-off, or --no-forecast/--no-calendar)
-    # they return "disabled", so naming them here would just waste tool calls/tokens.
-    tools = ["get_episode_stats for the cumulative resilience (P, absorption, adaptation)"]
-    if getattr(sim_host, "calendar_enabled", True):
-        tools.append("get_calendar for scheduled load events")
-    if getattr(sim_host, "forecast_enabled", True):
-        tools.append("get_forecast for the short-term prediction of where load is heading")
-    tool_line = "Call " + ", ".join(tools) + "."
-
-    prompt = (
+    # USER PROMPT constrcution  
+    user_prompt = (
         f"Assessment #{assessment}. {policy.context_str()}\n"
         f"Recent telemetry window:\n{window}\n"
         f"{note_line}"
-        f"{tool_line} Then judge storm-vs-noise from the window "
-        "trends and return a PolicyUpdate."
+        "Judge storm-vs-noise from the window trends and return a PolicyUpdate."
     )
     try:
-        t_llm   = time.monotonic()
-        result  = await agent.run(                 # the LLM call: reads tools, returns a PolicyUpdate
-            prompt, usage_limits=ASSESSMENT_LIMITS,
+        t_llm   = time.monotonic() # 
+        result  = await agent.run(                 # call the LLM 
+            user_prompt, usage_limits=ASSESSMENT_LIMITS,
             model_settings={"timeout": REQUEST_TIMEOUT_S},  # provider-native per-request cap
         )
         elapsed = time.monotonic() - t_llm     # pure LLM call time (incl. tool round-trips)
-        pu      = result.output                # the validated PolicyUpdate
+        verdict = result.output                # the validated PolicyUpdate — the judge's decision
         if stats:
             _accumulate_usage(stats, result, elapsed)
         policy.update(                         # publish the verdict to the blackboard the fast loop reads
-            storm_active=pu.storm_active,
-            malicious_drop_prob=pu.malicious_drop_prob,
-            queue_hold_threshold=pu.queue_hold_threshold,
-            lyapunov_V=pu.lyapunov_V,
-            lyapunov_W=pu.lyapunov_W,
-            tighten=pu.tighten,
+            storm_active=verdict.storm_active,
+            malicious_drop_prob=verdict.malicious_drop_prob,
+            queue_hold_threshold=verdict.queue_hold_threshold,
+            lyapunov_V=verdict.lyapunov_V,
+            lyapunov_W=verdict.lyapunov_W,
+            tighten=verdict.tighten,
         )
-        tuned = f"  tighten(V={pu.lyapunov_V:.0f})" if pu.tighten else ""
+        tuned = f"  tighten(V={verdict.lyapunov_V:.0f})" if verdict.tighten else ""
         print(
-            f"[Non-RT]  assessment={assessment}  storm={pu.storm_active}  "
-            f"drop={pu.malicious_drop_prob:.2f}{tuned}  "
-            f"({elapsed:.1f}s)  {pu.reasoning}"
+            f"[Non-RT]  assessment={assessment}  storm={verdict.storm_active}  "
+            f"drop={verdict.malicious_drop_prob:.2f}{tuned}  "
+            f"({elapsed:.1f}s)  {verdict.reasoning}"
         )
     except Exception as e:
         # includes request timeouts and, for agent/MCP runs, exceptions wrapped in a
@@ -263,22 +288,19 @@ async def _do_assessment(
         if stats:
             stats.assessment_latency_s += time.monotonic() - t0
 
-
+# LOOP of the Non-RT assessment 
 async def run_assessment_loop(
-    agent:      Agent,
-    policy:     SharedPolicy,
-    stop_event: asyncio.Event,
-    interval:   float = 10.0,
-    stats:      EpisodeStats | None = None,
-    window_s:   float = 40.0,
+    agent:      Agent, # pass the agent created
+    policy:     SharedPolicy, # pass the shared policy object to write in
+    stop_event: asyncio.Event, # the notifier when the episode ends 
+    interval:   float = 10.0, # seconds between assessments 
+    stats:      RunStats | None = None, # if i will save the run stats for logging 
+    window_s:   float = 40.0, # how much telemtry each assessment sees. 
 ) -> None:
     """
     Autonomous Non-RT assessment loop. Sleeps `interval` between assessments,
     wakes early and exits cleanly when stop_event fires, and always runs one
-    final assessment after the episode ends. Scheduled events reach the agent via
-    the get_calendar MCP tool (the calendar lives on runtime.host).
-
-    window_s: how much recent telemetry (seconds) the judge sees each assessment.
+    final assessment after the episode ends. 
     """
     assessment = 0
     while True:

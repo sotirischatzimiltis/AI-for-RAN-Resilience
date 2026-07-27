@@ -36,9 +36,9 @@ from scripts.experiment_model_comparison import _Tee, _prevent_sleep   # reuse l
 # Low-level building blocks — the agentic run is SELF-CONTAINED (like Experiment 1's bare
 # judge): it drives the fast loop + judge loop directly and never touches the Orchestrator
 # / run_episode, so no orchestrator tier is involved in Phase A.
-from agents.non_rt_agent import build_non_rt_agent, run_assessment_loop
+from agents.non_rt_agent import build_non_rt_agent, compose_system_prompt, run_assessment_loop
 from agents.near_rt_control_loop import run_control_loop
-from shared.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, RunStats
 from sim.config import (SimConfig, open_ran_arch, RRCConfig,
                         single_storm_traffic, multi_storm_flat_traffic)
 from sim.simulator import StormSim
@@ -101,9 +101,13 @@ async def run_agentic(model, scenario, seed, args) -> dict:
     loop. Off: anticipation (forecast/calendar), learning. On: Lyapunov capacity + the
     judge's storm_active / drop. Also reports the judge's mean LLM-call time and mean
     full-assessment time (summary+prompt+LLM+policy write)."""
-    non_rt = build_non_rt_agent(model, system_prompt=_PHASEA_PROMPT)
+    # anticipation OFF (its own experiment) → composed prompt lists only get_episode_stats
+    non_rt = build_non_rt_agent(
+        model,
+        system_prompt=compose_system_prompt(_PHASEA_PROMPT, calendar_enabled=False, forecast_enabled=False),
+    )
     policy = SharedPolicy()
-    stats  = EpisodeStats()
+    stats  = RunStats()
 
     sim_host.calendar = []
     sim_host.forecast_enabled = False   # anticipation OFF (its own experiment)

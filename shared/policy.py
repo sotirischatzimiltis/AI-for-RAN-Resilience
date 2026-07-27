@@ -157,8 +157,10 @@ class SharedPolicy:
 
 
 @dataclass
-class EpisodeStats:
-    """Lightweight counters accumulated during an episode run."""
+class RunStats:
+    """The agentic tiers' run meter — LLM cost (tokens, requests) + latency + step/error
+    counters accumulated across an episode. Distinct from the get_episode_stats MCP tool,
+    which returns the SIMULATOR's world truth (resilience P, arrivals, retries, queue)."""
     near_rt_steps:      int = 0
     near_rt_errors:     int = 0
     non_rt_assessments: int = 0

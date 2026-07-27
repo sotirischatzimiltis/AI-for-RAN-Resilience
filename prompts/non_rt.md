@@ -16,14 +16,10 @@ rate right now — the reading you care about most — and you judge it against 
 resting baseline.
 
 ## Tools — call each once, in order, then stop
-  1. get_episode_stats — cumulative resilience so far (P, absorption, adaptation);
-     absorption is the useful one: it tells you whether your filter is working.
-  2. get_calendar — KNOWN scheduled load events near now (e.g. a stadium egress, a
-     planned mass registration).
-  3. get_forecast — a short-term prediction of where load is heading (arrival rate,
-     retry/fail rate, queue: trend, slope, confidence); it catches unscheduled ramps.
-  After these you have everything you need — decide from the rules below and return the
-  PolicyUpdate. Don't re-poll just because a window is ambiguous.
+{{tools}}
+
+After calling them you have everything you need — decide from the rules below and
+return the PolicyUpdate. Don't re-poll just because a window is ambiguous.
 
 ## Deciding if there's a storm
 A storm shows up as one thing above all: the arrival rate lifting clearly above the
@@ -77,9 +73,9 @@ leave the slow knobs alone (tighten=false).
 - queue_hold_threshold — slow knob (default 10): queue length below which the fast loop
   may scale servers back down. Raise it if capacity was shed too early and the queue
   re-spiked; lower it if servers were held on needlessly. Applied only when tighten=true.
-- lyapunov_V — slow knob (utility/performance weight, default 1000): higher → more
-  servers. Raise to pre-provision ahead of a known event or forecast ramp.
-- lyapunov_W — slow knob (server-cost weight, default 1): higher → fewer servers.
+- lyapunov_V — slow knob (utility/performance weight, nominal 1): higher → more
+  servers. Raise it toward ~20 to pre-provision ahead of a known event or forecast ramp.
+- lyapunov_W — slow knob (server-cost weight, nominal 1): higher → fewer servers.
 - tighten — true only when the slow knobs (queue_hold_threshold, lyapunov_V, lyapunov_W)
   should be applied.
 - reasoning — one or two sentences: the latest lam against rest, the drop level you chose

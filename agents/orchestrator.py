@@ -27,8 +27,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
 from agents.near_rt_control_loop import run_control_loop
-from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop, _accumulate_usage
-from shared.policy              import SharedPolicy, EpisodeStats
+from agents.non_rt_agent        import build_non_rt_agent, compose_system_prompt, run_assessment_loop, _accumulate_usage
+from shared.policy              import SharedPolicy, RunStats
 from shared.event_calendar      import ScheduledEvent
 from runtime                    import host as sim_host, UP
 from sim.metrics                import (resilience_multi, benign_success_rate,
@@ -66,11 +66,11 @@ class OperatorDirective(BaseModel):
         description="Network posture: 'qos' favours service (more servers), 'cost' favours "
                     "efficiency (fewer), 'balanced' is neutral. Use 'balanced' if the intent "
                     "is only a delegation to the site judge")
-    lyapunov_V: float | None = Field(default=None, ge=0.0, le=100.0,
-        description="Explicit utility-weight override, normalised O(1) scale (nominal 1, ~20 to "
-                    "over-provision); higher -> more servers; null -> from priority")
-    lyapunov_W: float | None = Field(default=None, ge=0.0, le=100.0,
-        description="Explicit cost-weight override (O(1), nominal 1); higher -> fewer servers; null -> from priority")
+    lyapunov_V: float | None = Field(default=None, ge=0.0, le=20.0,
+        description="Explicit utility-weight override (nominal 1 = load-tracking); higher -> more "
+                    "servers (favour QoS), effect saturates around ~10; null -> from priority")
+    lyapunov_W: float | None = Field(default=None, ge=0.0, le=20.0,
+        description="Explicit cost-weight override (nominal 1); higher -> fewer servers; null -> from priority")
     min_servers: int | None = Field(default=None, ge=1, le=64,
         description="SLA capacity FLOOR: never run fewer than this. Null = no floor")
     schedule_event_name: str | None = Field(default=None,
@@ -95,7 +95,7 @@ async def route_intent(
     intent:       str,
     orchestrator: Agent,
     policy:       SharedPolicy,
-    stats:        EpisodeStats | None = None,
+    stats:        RunStats | None = None,
 ) -> str:
     """Understand an operator intent and act: set policy and/or delegate to the judge."""
     if stats:
@@ -175,7 +175,14 @@ async def run_episode(
     intents               : optional list of (delay_s, target, intent_text)
                             injected at the given wall-clock delays into the episode
     """
-    non_rt = build_non_rt_agent(model, system_prompt=non_rt_prompt)  # per-site storm judge (optional custom prompt)
+    # Compose the judge's system prompt ONCE (base rules + the tools enabled for THIS
+    # episode's ablation config); it stays constant for the whole run.
+    non_rt_system_prompt = compose_system_prompt(
+        non_rt_prompt,
+        calendar_enabled=not no_calendar,
+        forecast_enabled=not no_forecast,
+    )
+    non_rt = build_non_rt_agent(model, system_prompt=non_rt_system_prompt)  # per-site storm judge
     # The Orchestrator (operator-intent tier) is only built/run when intents are present
     # (Phase E). With no intents — Phases A–D — it never spins up.
     orchestrator = build_orchestrator_agent(model) if intents else None
@@ -186,7 +193,7 @@ async def run_episode(
     policy = SharedPolicy(**knobs) if knobs else SharedPolicy()
     if knobs:
         print(f"[Orchestrator] Loaded persisted knobs: {knobs}")
-    stats   = EpisodeStats()
+    stats   = RunStats()
 
     # Learned storm signature for the fast loop (auto-engage the filter).
     memory = None

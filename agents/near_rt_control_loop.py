@@ -3,7 +3,7 @@ import asyncio
 import time                                      # monotonic clock, to compensate the tick period
 from runtime import UP, host as sim_host        # shared utility params + the process-wide sim owner
 from sim.controllers import lyapunov_optimal_c  # the pure drift-plus-penalty c* search
-from shared.policy import SharedPolicy, EpisodeStats  # judge<->loop blackboard + per-episode counters
+from shared.policy import SharedPolicy, RunStats  # judge<->loop blackboard + per-episode counters
 
 def apply_decision( # apply the Non-RT judge's policy to the sim, clamping against guardrails
     sim,
@@ -58,7 +58,7 @@ async def run_control_loop(
     policy:        SharedPolicy, # the judge's current policy (read-only)
     stop_event:    asyncio.Event, # set by the episode-done callback to exit the loop
     poll_interval: float = 1.0, # the loop's tick period (s)
-    stats:         EpisodeStats | None = None, # per-episode counters (None = no counting)
+    stats:         RunStats | None = None, # per-episode counters (None = no counting)
     memory=None, # optional StormMemory for learned auto-engage (None = no learning, no auto-engage)
 ) -> None:
     """
