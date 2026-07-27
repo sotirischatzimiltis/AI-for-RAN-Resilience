@@ -43,10 +43,14 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 | `non_rt_agent.py` | the **LLM storm judge** (the model under comparison); token/cost accounting |
 | `near_rt_control_loop.py` | the fast deterministic loop (Lyapunov capacity + applies the judge-set filter) |
 
-### `shared/` — state shared between the agents (not an actor)
+### `shared/` — state + utilities shared across tiers (not actors)
 | File | Role |
 |---|---|
 | `policy.py` | `SharedPolicy` (judge↔fast-loop handoff) + `EpisodeStats` (counters, LLM usage) |
+| `forecast.py` | the λ-regression behind the `get_forecast` MCP tool |
+| `event_calendar.py` | scheduled-event data behind the `get_calendar` MCP tool |
+| `storm_memory.py` | learned storm-signature (within/across-episode learning) |
+| `policy_store.py` | persists tuned knobs + learned signature between episodes (JSON at repo root) |
 
 ### The storm judge (`non_rt_agent.py`) — two run modes
 
@@ -89,10 +93,6 @@ measures only `storm_active` + `malicious_drop_prob`.
 | File | Role |
 |---|---|
 | `runtime.py` | `SimHost` — owns the running episode; the single object every tier reads |
-| `forecast.py` | the λ-regression behind `get_forecast` |
-| `event_calendar.py` | scheduled-event data behind `get_calendar` |
-| `storm_memory.py` | learned storm-signature (within/across-episode learning) |
-| `policy_store.py` | persists tuned knobs + learned signature between episodes |
 | `FEATURES.md` | catalog of everything the system models |
 | `README.md`, `requirements.txt` | docs + dependencies |
 

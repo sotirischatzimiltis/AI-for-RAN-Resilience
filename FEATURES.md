@@ -113,9 +113,9 @@ and a deterministic **fast control loop**, over the simulation above.
 - **Learned storm-signature auto-engagement** — after weathering a storm the fast loop
   learns the benign baseline and a storm-onset threshold, then engages the filter itself
   with no LLM latency. Two toggleable timescales: **within-episode** (`--learn-within`) and
-  **across-episode** (`--learn-across`, persisted). `storm_memory.py`.
+  **across-episode** (`--learn-across`, persisted). `shared/storm_memory.py`.
 - **Persistence** — Lyapunov knobs (V / W / queue_hold) and the learned signature carry
-  across episodes. `policy_store.py`.
+  across episodes. `shared/policy_store.py`.
 
 ### 2.4 Coordination & guardrails
 - **Orchestrator + operator intents** — the network-management (SMO/rApp) tier is a single

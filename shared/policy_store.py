@@ -17,8 +17,8 @@ from pathlib import Path
 # Only the slow knobs persist.
 _KNOBS = ("queue_hold_threshold", "lyapunov_V", "lyapunov_W")
 
-DEFAULT_PATH        = Path(__file__).parent / ".policy_state.json"
-STORM_MEMORY_PATH   = Path(__file__).parent / ".storm_memory.json"
+DEFAULT_PATH        = Path(__file__).parent.parent / ".policy_state.json"
+STORM_MEMORY_PATH   = Path(__file__).parent.parent / ".storm_memory.json"
 # fields of the learned storm signature that persist across episodes
 _MEMORY_FIELDS = ("baseline_lam", "engage_threshold", "storm_drop_level",
                   "storms_seen", "learned")

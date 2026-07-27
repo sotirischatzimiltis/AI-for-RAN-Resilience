@@ -4,8 +4,10 @@ Non-RT-Agent — the storm judge in the decoupled (two-agent) design.
 Runs asynchronously on its own cadence (a few seconds), ABOVE the deterministic
 1 Hz fast control loop, which it never blocks. Each assessment it:
   • is fed a summary of the recent telemetry WINDOW (trends, not one instant);
-  • READS two MCP tools — get_episode_stats (resilience) and get_calendar
-    (known scheduled load events);
+  • READS up to three MCP tools — get_episode_stats (cumulative resilience),
+    get_calendar (known scheduled load events) and get_forecast (short-term load
+    prediction). Anticipation tools (calendar/forecast) can be ablated off, leaving
+    just get_episode_stats (the bare-judge configuration used in Experiment 1);
   • WRITES a PolicyUpdate into shared policy: the operational levers
     (storm_active, malicious_drop_prob) every cycle, plus the slow tuning knobs
     (queue_hold_threshold, lyapunov_V, lyapunov_W) when it sets tighten=True —
@@ -77,12 +79,12 @@ class PolicyUpdate(BaseModel):
 
 
 def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
-    toolset = MCPServerStreamableHTTP(MCP_URL)
+    toolset = MCPServerStreamableHTTP(MCP_URL)     # HTTP client for the MCP read tools
     return Agent(
-        model=model,
-        output_type=PolicyUpdate,
-        toolsets=[toolset],
-        system_prompt=system_prompt or SYSTEM_PROMPT,
+        model=model,                               # the LLM under test (Exp 1) / the campaign judge
+        output_type=PolicyUpdate,                  # force structured output — the model MUST return a valid PolicyUpdate
+        toolsets=[toolset],                        # tools it may call (get_episode_stats, and forecast/calendar if enabled)
+        system_prompt=system_prompt or SYSTEM_PROMPT,  # caller-supplied prompt (Exp 1) or the full-system default
     )
 
 
@@ -98,9 +100,9 @@ def _resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> f
     lams = [s.lam_current for s in telemetry]
     if not lams:
         return 0.0
-    binned = Counter(round(l / bin_size) * bin_size for l in lams)
-    floor  = max(1.0, min_frac * max(binned.values()))
-    return float(min(b for b, c in binned.items() if c >= floor))
+    binned = Counter(round(l / bin_size) * bin_size for l in lams)   # snap each lam to a bin, count occupancy
+    floor  = max(1.0, min_frac * max(binned.values()))              # ignore sparse bins (< min_frac of the busiest)
+    return float(min(b for b, c in binned.items() if c >= floor))    # lowest bin the cell actually dwells in = resting level
 
 
 def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
@@ -113,41 +115,43 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     if not telemetry:
         return "No telemetry yet — episode may not have started."
     t_now = telemetry[-1].t
-    win   = [s for s in telemetry if s.t >= t_now - window_s]
+    win   = [s for s in telemetry if s.t >= t_now - window_s]   # keep only the last window_s of samples
     if len(win) < 2:
         return f"Only {len(win)} sample(s) so far; system just started."
 
-    t0, t1     = win[0].t, win[-1].t
-    lam0, lam1 = win[0].lam_current, win[-1].lam_current
-    q0, q1     = win[0].queue_len, win[-1].queue_len
+    t0, t1     = win[0].t, win[-1].t                 # window start/end times
+    lam0, lam1 = win[0].lam_current, win[-1].lam_current   # arrival rate: window start vs now
+    q0, q1     = win[0].queue_len, win[-1].queue_len       # queue length: window start vs now
 
-    # retry-rate: first half vs second half of the window (retries are cumulative)
+    # retry-rate: first half vs second half of the window (retries are CUMULATIVE, so
+    # differentiate over each half; a rising retry-rate is the earliest storm signal)
     mid = len(win) // 2
-    def rate(a: int, b: int) -> float:
-        dt = max(win[b].t - win[a].t, 1e-6)
+    def rate(a: int, b: int) -> float:               # retries/sec between sample a and b
+        dt = max(win[b].t - win[a].t, 1e-6)          # guard against zero dt
         return (win[b].retries - win[a].retries) / dt
-    rr_first  = rate(0, mid)
-    rr_second = rate(mid, len(win) - 1)
+    rr_first  = rate(0, mid)                          # retry-rate over the window's first half
+    rr_second = rate(mid, len(win) - 1)              # ...and its second half
 
-    # in-window peak arrival rate and how long ago it occurred
+    # in-window peak arrival rate and how long ago it occurred (recency = is the surge fresh or fading?)
     peak       = max(win, key=lambda s: s.lam_current)
     since_peak = t_now - peak.t
 
-    def direction(a: float, b: float, eps: float) -> str:
+    def direction(a: float, b: float, eps: float) -> str:   # classify a->b as rising/falling/flat (eps = deadband)
         if b > a + eps: return "rising"
         if b < a - eps: return "falling"
         return "flat"
-    lam_dir = direction(lam0, lam1, 5.0)
+    lam_dir = direction(lam0, lam1, 5.0)             # deadbands sized to the traffic scale (UEs/s)
     q_dir   = direction(q0, q1, 5.0)
     rr_dir  = direction(rr_first, rr_second, 1.0)
 
-    # coarse binned arrival-rate trajectory (means per bin)
+    # coarse binned arrival-rate trajectory: split the window into n_bins equal slices and
+    # report each slice's mean lam, so the model sees the SHAPE (ramp/plateau/decay), not noise
     span = max(t1 - t0, 1e-6)
     bins = []
     for i in range(n_bins):
-        lo, hi = t0 + span * i / n_bins, t0 + span * (i + 1) / n_bins
+        lo, hi = t0 + span * i / n_bins, t0 + span * (i + 1) / n_bins   # this bin's time slice
         vals   = [s.lam_current for s in win if lo <= s.t < hi]
-        bins.append(str(round(sum(vals) / len(vals))) if vals else "-")
+        bins.append(str(round(sum(vals) / len(vals))) if vals else "-")  # mean lam, or "-" if empty
     traj = " ".join(bins)
 
     # Resting baseline from the FULL history so far (not just the window), so the judge
@@ -193,10 +197,11 @@ async def _do_assessment(
     stats:      EpisodeStats | None,
     window_s:   float = 40.0,
 ) -> None:
-    t0     = time.monotonic()
+    t0     = time.monotonic()                        # start of the WHOLE assessment (for asmt-latency stat)
+    # turn the raw telemetry into the trend summary the model reasons over (never raw samples)
     window = summarize_window(sim_host.sim.telemetry, window_s=window_s) if sim_host.sim else "No sim running."
 
-    note = policy.get_operator_note()
+    note = policy.get_operator_note()                # standing operator instruction, if the Orchestrator set one
     note_line = (f"\nOPERATOR INSTRUCTION (from the network operator, honour it): {note}\n"
                  if note else "")
 
@@ -219,15 +224,15 @@ async def _do_assessment(
     )
     try:
         t_llm   = time.monotonic()
-        result  = await agent.run(
+        result  = await agent.run(                 # the LLM call: reads tools, returns a PolicyUpdate
             prompt, usage_limits=ASSESSMENT_LIMITS,
             model_settings={"timeout": REQUEST_TIMEOUT_S},  # provider-native per-request cap
         )
         elapsed = time.monotonic() - t_llm     # pure LLM call time (incl. tool round-trips)
-        pu      = result.output
+        pu      = result.output                # the validated PolicyUpdate
         if stats:
             _accumulate_usage(stats, result, elapsed)
-        policy.update(
+        policy.update(                         # publish the verdict to the blackboard the fast loop reads
             storm_active=pu.storm_active,
             malicious_drop_prob=pu.malicious_drop_prob,
             queue_hold_threshold=pu.queue_hold_threshold,
@@ -278,12 +283,13 @@ async def run_assessment_loop(
     assessment = 0
     while True:
         try:
+            # sleep `interval` between assessments, but wake the instant the episode ends
             await asyncio.wait_for(stop_event.wait(), timeout=interval)
-            break  # episode done → drop to final assessment
+            break  # stop_event fired → episode done → drop to the final assessment below
         except asyncio.TimeoutError:
-            pass
+            pass   # a normal interval elapsed → run the next assessment
 
-        if stop_event.is_set():
+        if stop_event.is_set():          # double-check (race: could have fired during setup)
             break
 
         assessment += 1
@@ -291,7 +297,7 @@ async def run_assessment_loop(
             stats.non_rt_assessments += 1
         await _do_assessment(agent, policy, assessment, stats, window_s=window_s)
 
-    # Final assessment at episode end
+    # Always run ONE final assessment after the episode ends (captures the recovery state)
     assessment += 1
     if stats:
         stats.non_rt_assessments += 1

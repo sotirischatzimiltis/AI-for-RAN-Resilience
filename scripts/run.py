@@ -52,7 +52,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mcp_server.server import mcp, MCP_HOST, MCP_PORT
 from agents.orchestrator import run_episode
-from event_calendar import ScheduledEvent
+from shared.event_calendar import ScheduledEvent
 
 
 def resolve_model(model_str: str):

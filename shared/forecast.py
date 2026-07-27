@@ -1,7 +1,7 @@
 """
 Short-term telemetry forecast — data-driven extrapolation of the UNKNOWN.
 
-Where the calendar (event_calendar.py) answers "what load is SCHEDULED?", the
+Where the calendar (shared/event_calendar.py) answers "what load is SCHEDULED?", the
 forecast answers "where is the telemetry HEADING in the next ~20s?". It fits an
 ordinary least-squares line to the last ~30s of each signal and projects the
 slope forward, so the Non-RT-Agent can pre-provision on a PREDICTED ramp before

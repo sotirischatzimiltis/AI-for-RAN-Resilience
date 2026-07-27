@@ -16,8 +16,8 @@ from fastmcp import FastMCP
 
 from sim.metrics import resilience_score, benign_success_rate, malicious_blocked_rate
 from runtime import host, UP
-from event_calendar import summarize_calendar
-from forecast import forecast_signals, summarize_forecast
+from shared.event_calendar import summarize_calendar
+from shared.forecast import forecast_signals, summarize_forecast
 
 MCP_HOST = "127.0.0.1"
 MCP_PORT = 8000

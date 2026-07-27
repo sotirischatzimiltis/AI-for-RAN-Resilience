@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mcp_server.server import mcp, MCP_HOST, MCP_PORT
 from agents.orchestrator import run_episode
-from event_calendar import ScheduledEvent
+from shared.event_calendar import ScheduledEvent
 from scripts.run import resolve_model
 
 # scenario -> sim time of the first storm onset (for the pre-provisioning calendar event)
