@@ -41,25 +41,51 @@ waits for it.
 ## Repository layout
 
 ```
-agents/
-├── orchestrator.py         starts the episode, launches loops, routes intents
-├── non_rt_agent.py         LLM storm judge — telemetry-window trends → policy
-└── near_rt_control_loop.py PURE-CODE 1 Hz loop — c_star + policy → clamp → actuate
+agents/                         the three actors (nothing else lives here)
+├── orchestrator.py             starts the episode, launches loops, routes operator intents
+├── non_rt_agent.py             LLM storm judge — telemetry-window trends → PolicyUpdate
+└── near_rt_control_loop.py     PURE-CODE 1 Hz loop — c_star + policy → clamp → actuate
 
-shared/
-└── policy.py               SharedPolicy: atomic storm_active / malicious_drop_prob handoff
+shared/                         state + tool backends shared across tiers (not actors)
+├── policy.py                   SharedPolicy (judge↔loop handoff) + EpisodeStats
+├── forecast.py                 λ-regression behind the get_forecast MCP tool
+├── event_calendar.py           scheduled-event data behind the get_calendar MCP tool
+├── storm_memory.py             learned storm-signature (within/across-episode learning)
+└── policy_store.py             persists tuned knobs + signature between episodes
 
 mcp_server/
-└── server.py               hosts the running episode (SimHost) + get_episode_stats
+└── server.py                   hosts the running episode (SimHost) + the 3 MCP read tools
 
-sim/
-├── config.py               SimConfig, Open RAN architecture, traffic schedules
-├── simulator.py            StormSim: SimPy engine, real-time capable
-├── metrics.py              utility u(t) and the A3RT resilience score P
-└── controllers.py          shared lyapunov_optimal_c() + classical baselines
+sim/                            the simulator (the "world"; no AI) — see sim/README.md
+├── config.py                   SimConfig, Open RAN architecture, traffic schedules
+├── simulator.py                StormSim: SimPy engine, real-time capable
+├── controllers.py              shared lyapunov_optimal_c() + Fixed/Lyapunov baselines
+├── metrics.py                  utility u(t) and the A3RT resilience score P
+└── README.md                   per-file / per-component guide to sim/
 
 prompts/
-└── non_rt.md               system prompt for the Non-RT storm judge
+├── non_rt.md                   full-system storm-judge prompt
+├── prompts_mc_non_rt.md        bare-judge prompt (Experiment 1 model bake-off)
+├── prompts_phaseA_non_rt.md    Phase A headline judge prompt
+└── orchestrator.md             operator-intent prompt
+
+scripts/
+├── run.py                      full-system episode CLI (Orchestrator → run_episode)
+├── run_near_rt.py              bare fast-loop + judge runner (no Orchestrator)
+├── experiment_model_comparison.py   Experiment 1 — LLM storm-judge bake-off
+├── experiment_phaseA_headline.py    Phase A — Static vs Lyapunov vs Agentic
+├── table_model_comparison.py   builds the Exp 1 LaTeX table
+├── plot_model_comparison.py    builds the Exp 1 figure
+├── ablation.py                 ablation sweep (forecast / calendar / learning)
+└── gui.py                      live GUI viewer of a running episode
+
+experiments/                    curated results per experiment (data, figures, LaTeX)
+├── README.md                   the campaign index (Exp 1 + Phases A–E)
+└── exp1_model_comparison/      Exp 1 artifacts (json, png, .tex, README)
+
+runtime.py                      SimHost — owns the running episode; every tier reads it
+STRUCTURE.md                    detailed directory map (source of truth for layout)
+FEATURES.md                     catalog of everything the system models
 ```
 
 ---
