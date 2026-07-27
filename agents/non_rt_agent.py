@@ -29,7 +29,7 @@ from pydantic_ai.usage import UsageLimits
 
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
-from agents.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, EpisodeStats
 
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
 
@@ -63,12 +63,13 @@ class PolicyUpdate(BaseModel):
                                         description="Queue length below which the fast loop may scale servers "
                                                     "down; higher holds capacity longer during drain. Applied "
                                                     "only when tighten=True")
-    lyapunov_V:           float = Field(ge=0.0, le=100000.0, default=1000.0,
-                                        description="Lyapunov utility/performance weight (raw scale, default 1000). "
-                                                    "Higher -> provision MORE servers (favour QoS); raise ahead of a "
-                                                    "forecast storm or scheduled mass event. Applied only when tighten=True")
-    lyapunov_W:           float = Field(ge=0.0, le=1000.0, default=1.0,
-                                        description="Lyapunov server-cost weight (raw scale, default 1). Higher -> "
+    lyapunov_V:           float = Field(ge=0.0, le=100.0, default=1.0,
+                                        description="Lyapunov utility/performance weight (normalised O(1) scale, "
+                                                    "nominal 1 = load-tracking). Higher -> provision MORE servers "
+                                                    "(favour QoS); raise toward ~20 ahead of a forecast storm or "
+                                                    "scheduled mass event to pre-provision. Applied only when tighten=True")
+    lyapunov_W:           float = Field(ge=0.0, le=100.0, default=1.0,
+                                        description="Lyapunov server-cost weight (O(1), nominal 1). Higher -> "
                                                     "provision FEWER servers (favour cost). Applied only when tighten=True")
     tighten:              bool  = Field(description="True only if the slow tuning knobs (queue_hold_threshold, "
                                                     "lyapunov_V, lyapunov_W) should be applied")

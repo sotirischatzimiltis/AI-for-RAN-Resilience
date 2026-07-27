@@ -48,7 +48,6 @@ CONFIGS: dict[str, dict] = {
     "full":        {},
     "no-forecast": {"no_forecast": True},
     "no-calendar": {"no_calendar": True},
-    "no-release":  {"no_release_valve": True},
     "no-learning": {"learn_within": False},
 }
 

@@ -10,7 +10,7 @@ artifacts are promoted here.
 |---|---|---|---|
 | 1 | LLM storm-judge bake-off (model selection) | ✅ done — winner: `gemini-3.1-flash-lite` | [`exp1_model_comparison/`](exp1_model_comparison/) |
 | A | Headline: Static vs Lyapunov vs Agentic | 🟡 tooling ready, validated (1 seed) — full 10-seed run pending | `scripts/experiment_phaseA_headline.py` |
-| B | Ablations (forecast / calendar / release-valve / learning) | ⬜ planned | — |
+| B | Ablations (forecast / calendar / learning) | ⬜ planned | — |
 | C | Learning curve (within / across episode) | ⬜ planned | — |
 | D | Robustness (contention κ, provisioning delay, cadence) | ⬜ planned | — |
 | E | Orchestrator / operator intents | ⬜ planned | — |

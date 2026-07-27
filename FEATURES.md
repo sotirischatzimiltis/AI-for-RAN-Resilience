@@ -28,13 +28,11 @@ under benign + malicious load.
 - **Botnet aggressive re-attach** `[default on]` — an admitted malicious UE re-attaches
   every `botnet_attach_period_ms` (default 200 ms), the DDoS-style signaling flood.
 
-### 1.2 Latency / service-time model (the disaggregation cost)
+### 1.2 Latency / service-time model
 - **Per-attach service time = internal processing + M·(one-way delay)** `[default on]` —
   `service_time = proc_total_ms + n_ctrl_messages × oneway_delay_ms`.
-  Open RAN RU→CU one-way = 1.60 ms (0.10 O-FH + 1.50 F1) vs monolithic 0.25 ms, giving
-  per-server **μ ≈ 28.7 UEs/s (Open RAN)** vs **32.5 (monolithic)**. The disaggregation
-  latency penalty is reproduced explicitly. `sim/config.py::ArchConfig`,
-  `open_ran_arch()` / `monolithic_arch()`.
+  Open RAN RU→CU one-way = 1.60 ms (0.10 O-FH + 1.50 F1), giving per-server
+  **μ ≈ 28.7 UEs/s**. `sim/config.py::ArchConfig`, `open_ran_arch()`.
 - **Shared-compute contention (processor sharing)** `[optional]` — when `compute_kappa`
   is set, the *processing* component of each attach inflates by `1/(1 − ρc)`, with
   `ρc = busy_workers / kappa` (clamped by `compute_rho_cap`). Concurrency slows every
@@ -108,9 +106,10 @@ and a deterministic **fast control loop**, over the simulation above.
   the marginal value of each can be measured.
 
 ### 2.3 Reactive security & learning
-- **Release valve** — the fast loop drops the filter the instant load returns to baseline,
-  without waiting for the LLM, so recovery traffic is never over-filtered. Ablatable via
-  `--no-release-valve` (filter then disengages only on the LLM's next storm=False verdict).
+- **Judge-owned filter control** — the Non-RT judge alone owns storm detection: it both
+  ENGAGES the malicious-drop filter and RELEASES it (on its `storm_active -> False`
+  verdict). The fast loop never forms its own storm-vs-benign verdict; it is a pure
+  actuator that applies the judge's decision (and the learned auto-engage below).
 - **Learned storm-signature auto-engagement** — after weathering a storm the fast loop
   learns the benign baseline and a storm-onset threshold, then engages the filter itself
   with no LLM latency. Two toggleable timescales: **within-episode** (`--learn-within`) and

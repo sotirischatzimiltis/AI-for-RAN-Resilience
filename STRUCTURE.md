@@ -41,7 +41,11 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 |---|---|
 | `orchestrator.py` | network tier: understands operator intents; `run_episode()` (full-system runner) |
 | `non_rt_agent.py` | the **LLM storm judge** (the model under comparison); token/cost accounting |
-| `near_rt_control_loop.py` | the fast deterministic loop (Lyapunov capacity, filter, release valve) |
+| `near_rt_control_loop.py` | the fast deterministic loop (Lyapunov capacity + applies the judge-set filter) |
+
+### `shared/` — state shared between the agents (not an actor)
+| File | Role |
+|---|---|
 | `policy.py` | `SharedPolicy` (judge↔fast-loop handoff) + `EpisodeStats` (counters, LLM usage) |
 
 ### The storm judge (`non_rt_agent.py`) — two run modes
@@ -55,7 +59,7 @@ The judge's **decision surface** (`PolicyUpdate`) is: `storm_active`, `malicious
 |---|---|---|
 | Prompt | `prompts/non_rt.md` | `prompts/prompts_mc_non_rt.md` |
 | Tools offered | `stats` + `forecast` + `calendar` | `get_episode_stats` only |
-| Capacity knobs (V/W/queue_hold) | judge tunes them (`tighten=true`) to pre-provision | **inert** — prompt forces `tighten=false`; capacity is fixed Lyapunov (V=1000, W=1) |
+| Capacity knobs (V/W/queue_hold) | judge tunes them (`tighten=true`) to pre-provision | **inert** — prompt forces `tighten=false`; capacity is fixed Lyapunov (V=1, W=1) |
 | Release valve (code-side filter drop) | on | off |
 | Learned auto-engage | optional (`--learn-*`) | off |
 | Operator intents | yes | none |
@@ -72,7 +76,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 | `non_rt.md` | full judge prompt (used by the full system, phases A–E) |
 | `orchestrator.md` | operator-intent prompt |
 | `prompts_mc_non_rt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
-| `prompts_phaseA_non_rt.md` | dedicated **Phase A** judge prompt (detection + filter, release-valve-off framing) |
+| `prompts_phaseA_non_rt.md` | dedicated **Phase A** judge prompt (detection + filter) |
 
 ### `mcp_server/` — tools the judge can call
 | File | Role |

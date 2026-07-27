@@ -127,7 +127,6 @@ async def main(args: argparse.Namespace) -> None:
         intents=intents,
         no_forecast=args.no_forecast,
         no_calendar=args.no_calendar,
-        no_release_valve=args.no_release_valve,
         compute_kappa=args.compute_kappa,
         provision_delay=args.provision_delay,
     )
@@ -195,8 +194,6 @@ if __name__ == "__main__":
                         help="ablation: get_forecast returns 'unavailable' (no data-driven pre-provisioning)")
     parser.add_argument("--no-calendar",         action="store_true", dest="no_calendar",
                         help="ablation: get_calendar returns 'unavailable' (no scheduled-event pre-provisioning)")
-    parser.add_argument("--no-release-valve",    action="store_true", dest="no_release_valve",
-                        help="ablation: disable the code-side filter release (filter drops only on LLM verdict)")
     # --- system-model stressors (off by default; recover the paper's numbers) ---
     parser.add_argument("--compute-kappa",       type=float, default=None, dest="compute_kappa",
                         help="shared-compute contention: attach processing inflates by 1/(1-rho_c), "

@@ -4,8 +4,8 @@ Experiment A — headline comparison: does the agentic system beat non-AI baseli
 Compares three controllers on the SAME scenarios/seeds:
   • Static (c=8)   — fixed capacity, no LLM
   • Lyapunov       — dynamic drift-plus-penalty capacity, no LLM
-  • Agentic        — the full system: gemini storm judge + malicious filter + release
-                     valve + anticipation tools (forecast/calendar), learning OFF
+  • Agentic        — the full system: gemini storm judge + malicious filter +
+                     anticipation tools (forecast/calendar), learning OFF
                      (learning is Experiment C), no operator intents (Experiment E)
 
 The two deterministic baselines run in virtual time (fast, no LLM, no MCP); the agentic
@@ -38,7 +38,7 @@ from scripts.experiment_model_comparison import _Tee, _prevent_sleep   # reuse l
 # / run_episode, so no orchestrator tier is involved in Phase A.
 from agents.non_rt_agent import build_non_rt_agent, run_assessment_loop
 from agents.near_rt_control_loop import run_control_loop
-from agents.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, EpisodeStats
 from sim.config import (SimConfig, open_ran_arch, RRCConfig,
                         single_storm_traffic, multi_storm_flat_traffic)
 from sim.simulator import StormSim
@@ -53,7 +53,7 @@ _SCENARIOS = ["single_storm", "multi_storm_flat"]
 
 # Dedicated Phase A judge prompt: storm detection + filter only (anticipation is
 # demonstrated in a separate experiment, so it is off here — the full system for the
-# headline is Lyapunov capacity + LLM security judge + release valve).
+# headline is Lyapunov capacity + LLM security judge).
 _PHASEA_PROMPT = (Path(__file__).parent.parent / "prompts" / "prompts_phaseA_non_rt.md").read_text()
 
 # deterministic baselines: (label, controller factory, initial server count c0)
@@ -63,7 +63,7 @@ BASELINES = [
     ("Static (c=16)", lambda: FixedController(16), 16),  # fully provisioned (= c_max)
     # util_p=UP so the baseline optimises the SAME utility the agentic fast loop uses and
     # that P is scored on (default UtilityParams differs: lq_max 7000 vs 1500) — fair + optimal.
-    ("Lyapunov",      lambda: LyapunovController(V=1000, W=1, util_p=UP), 1),
+    ("Lyapunov",      lambda: LyapunovController(V=1, W=1, util_p=UP), 1),
 ]
 
 
@@ -83,7 +83,7 @@ def run_baseline(factory, c0, scenario, seed) -> dict:
     defense) is 0; `blocked` may still be >0 from starvation-failures under an inadequate
     fixed capacity. No LLM → latencies are 0."""
     cfg = SimConfig(arch=open_ran_arch(), rrc=RRCConfig(t300_ms=1000, max_attempts=5),
-                    c0=c0, c_max=16, lq_max=LQMAX, traffic=_traffic(scenario), seed=seed)
+                    c0=c0, c_max=16, traffic=_traffic(scenario), seed=seed)
     sim = StormSim(cfg)
     sim.run(controller=factory())
     storms = sim.cfg.traffic.storm_windows()
@@ -98,9 +98,9 @@ def run_baseline(factory, c0, scenario, seed) -> dict:
 async def run_agentic(model, scenario, seed, args) -> dict:
     """One self-contained agentic episode — exactly Experiment 1's bare-judge structure
     (no Orchestrator / run_episode): the gemini storm judge over the deterministic fast
-    loop. Off: anticipation (forecast/calendar), learning, release valve. On: Lyapunov
-    capacity + the judge's storm_active / drop. Also reports the judge's mean LLM-call
-    time and mean full-assessment time (summary+prompt+LLM+policy write)."""
+    loop. Off: anticipation (forecast/calendar), learning. On: Lyapunov capacity + the
+    judge's storm_active / drop. Also reports the judge's mean LLM-call time and mean
+    full-assessment time (summary+prompt+LLM+policy write)."""
     non_rt = build_non_rt_agent(model, system_prompt=_PHASEA_PROMPT)
     policy = SharedPolicy()
     stats  = EpisodeStats()
@@ -120,7 +120,7 @@ async def run_agentic(model, scenario, seed, args) -> dict:
 
     await asyncio.gather(
         _watch(),
-        run_control_loop(policy, stop_event, 1.0, stats, memory=None, release_valve=False),
+        run_control_loop(policy, stop_event, 1.0, stats, memory=None),
         run_assessment_loop(non_rt, policy, stop_event, args.assessment_interval, stats,
                             window_s=args.window_s),
     )

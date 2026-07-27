@@ -39,16 +39,16 @@ class SharedPolicy:
     queue_hold_threshold — the fast loop refuses to scale servers DOWN while
                            queue_len is at/above this. Higher = hold capacity
                            longer during drain; lower = scale down sooner.
-    lyapunov_V           — Lyapunov utility/performance weight (raw scale ~1000).
-                           Higher V favours QoS → the loop provisions MORE servers.
-    lyapunov_W           — Lyapunov server-cost weight (raw scale ~1). Higher W
-                           penalises servers → the loop provisions FEWER. Use it to
-                           pre-tune posture for a forecast storm / mass event.
+    lyapunov_V           — Lyapunov utility/performance weight (NORMALISED O(1) scale;
+                           nominal 1, load-tracking). Higher V favours QoS → the loop
+                           provisions MORE servers; raise toward ~20 to pre-provision.
+    lyapunov_W           — Lyapunov server-cost weight (O(1); nominal 1). Higher W
+                           penalises servers → the loop provisions FEWER.
     """
     malicious_drop_prob:  float = 0.0
     storm_active:         bool  = False
     queue_hold_threshold: int   = 10
-    lyapunov_V:          float = 1000.0
+    lyapunov_V:          float = 1.0    # normalised O(1) scale (was 1000); nominal load-tracking
     lyapunov_W:          float = 1.0
 
     # Operator overrides, set by a routed intent via set_operator(). When present
@@ -151,7 +151,7 @@ class SharedPolicy:
                 f"Policy: storm_active={self.storm_active}, "
                 f"malicious_drop_prob={self.malicious_drop_prob:.2f}, "
                 f"queue_hold_threshold={self.queue_hold_threshold}, "
-                f"lyapunov_V={self.lyapunov_V:.0f}, lyapunov_W={self.lyapunov_W:.2f}"
+                f"lyapunov_V={self.lyapunov_V:.1f}, lyapunov_W={self.lyapunov_W:.2f}"
                 f"{age_str}.{op}"
             )
 

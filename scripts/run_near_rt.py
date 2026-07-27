@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from runtime import host as sim_host
 from agents.near_rt_control_loop import run_control_loop
-from agents.policy import SharedPolicy, EpisodeStats
+from shared.policy import SharedPolicy, EpisodeStats
 
 
 async def storm_signal(policy: SharedPolicy, stop_event: asyncio.Event, interval: float) -> None:

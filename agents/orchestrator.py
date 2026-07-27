@@ -28,7 +28,7 @@ from pydantic_ai import Agent
 
 from agents.near_rt_control_loop import run_control_loop
 from agents.non_rt_agent        import build_non_rt_agent, run_assessment_loop, _accumulate_usage
-from agents.policy              import SharedPolicy, EpisodeStats
+from shared.policy              import SharedPolicy, EpisodeStats
 from event_calendar             import ScheduledEvent
 from runtime                    import host as sim_host, UP
 from sim.metrics                import (resilience_multi, benign_success_rate,
@@ -52,11 +52,12 @@ from storm_memory               import StormMemory
 _PROMPTS_DIR  = Path(__file__).parent.parent / "prompts"
 SYSTEM_PROMPT = (_PROMPTS_DIR / "orchestrator.md").read_text()
 
-# priority -> (V, W) when the operator gives no explicit weights
+# priority -> (V, W) when the operator gives no explicit weights.
+# Normalised O(1) scale (after CTL-2): nominal V=1 load-tracks; V~20 over-provisions.
 PRIORITY_VW = {
-    "qos":      (5000.0, 1.0),   # favour service: many servers
-    "cost":     (500.0, 5.0),    # favour efficiency: few servers
-    "balanced": (1000.0, 1.0),   # the default posture
+    "qos":      (20.0, 1.0),     # favour service: provision more (high V)
+    "cost":     (1.0, 5.0),      # favour efficiency: fewer servers (high W)
+    "balanced": (1.0, 1.0),      # the default posture: load-tracking
 }
 
 
@@ -65,10 +66,11 @@ class OperatorDirective(BaseModel):
         description="Network posture: 'qos' favours service (more servers), 'cost' favours "
                     "efficiency (fewer), 'balanced' is neutral. Use 'balanced' if the intent "
                     "is only a delegation to the site judge")
-    lyapunov_V: float | None = Field(default=None, ge=0.0, le=100000.0,
-        description="Explicit utility-weight override (higher -> more servers); null -> from priority")
-    lyapunov_W: float | None = Field(default=None, ge=0.0, le=1000.0,
-        description="Explicit cost-weight override (higher -> fewer servers); null -> from priority")
+    lyapunov_V: float | None = Field(default=None, ge=0.0, le=100.0,
+        description="Explicit utility-weight override, normalised O(1) scale (nominal 1, ~20 to "
+                    "over-provision); higher -> more servers; null -> from priority")
+    lyapunov_W: float | None = Field(default=None, ge=0.0, le=100.0,
+        description="Explicit cost-weight override (O(1), nominal 1); higher -> fewer servers; null -> from priority")
     min_servers: int | None = Field(default=None, ge=1, le=64,
         description="SLA capacity FLOOR: never run fewer than this. Null = no floor")
     schedule_event_name: str | None = Field(default=None,
@@ -154,9 +156,8 @@ async def run_episode(
     learn_across:          bool = False,
     no_forecast:           bool = False,
     no_calendar:           bool = False,
-    no_release_valve:      bool = False,
     compute_kappa:         float | None = None,
-    provision_delay:       float = 0.0,
+    provision_delay:       float = 5.0,   # matches CFG-1 default; 0 = instant (prior-paper model)
     non_rt_prompt:         str | None = None,
 ) -> dict:
     """
@@ -204,9 +205,8 @@ async def run_episode(
     # Ablation gates for the anticipation MCP tools (read by the MCP server)
     sim_host.forecast_enabled = not no_forecast
     sim_host.calendar_enabled = not no_calendar
-    if no_forecast or no_calendar or no_release_valve:
-        off = [n for n, f in (("forecast", no_forecast), ("calendar", no_calendar),
-                              ("release-valve", no_release_valve)) if f]
+    if no_forecast or no_calendar:
+        off = [n for n, f in (("forecast", no_forecast), ("calendar", no_calendar)) if f]
         print(f"[Orchestrator] Ablation: disabled {', '.join(off)}")
 
     # Start simulator
@@ -236,8 +236,7 @@ async def run_episode(
     tasks = [
         asyncio.create_task(_watch_episode()),
         asyncio.create_task(
-            run_control_loop(policy, stop_event, poll_interval_s, stats, memory,
-                             release_valve=not no_release_valve)
+            run_control_loop(policy, stop_event, poll_interval_s, stats, memory)
         ),
         asyncio.create_task(
             run_assessment_loop(non_rt, policy, stop_event, assessment_interval_s, stats, window_s=window_s)

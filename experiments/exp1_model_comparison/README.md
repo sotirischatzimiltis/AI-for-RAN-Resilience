@@ -5,7 +5,7 @@ efficient-tier models under identical conditions and pick one for the rest of th
 campaign (Phases A–E).
 
 **Setup.** Bare judge (telemetry-only detection, no anticipation tools / learning /
-release valve / operator intents), real-time pacing (`rt_factor=1`), 5 seeds, two
+operator intents), real-time pacing (`rt_factor=1`), 5 seeds, two
 scenarios: `single_storm` (utility only, no botnet) and `multi_storm_flat` (three
 identical storms with a botnet — the discriminating scenario). Frozen prompt:
 `prompts/prompts_mc_non_rt.md`. Reasoning-capable models run on+off where the

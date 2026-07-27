@@ -56,7 +56,7 @@ from scripts.run import resolve_model                   # turn a model string in
 # from the bake-off. It reuses only the deterministic loops + the judge loop.
 from agents.non_rt_agent import build_non_rt_agent, run_assessment_loop  # build the judge + run its loop
 from agents.near_rt_control_loop import run_control_loop                 # the deterministic 1 Hz fast loop
-from agents.policy import SharedPolicy, EpisodeStats     # judge↔loop handoff + per-episode counters/usage
+from shared.policy import SharedPolicy, EpisodeStats     # judge↔loop handoff + per-episode counters/usage
 from runtime import host as sim_host, UP                 # the sim host (owns the episode) + utility params
 from sim.metrics import resilience_multi, benign_success_rate, malicious_blocked_rate  # ground-truth scoring
 
@@ -218,9 +218,9 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
     """Self-contained bare-judge episode — the LLM storm judge over the deterministic
     fast loop, with EVERY add-on off. Deliberately does NOT call
     orchestrator.run_episode, so the full pipeline stays decoupled from this
-    experiment. Off: anticipation tools (forecast/calendar), learning, the code-side
-    release valve, operator intents. On: only Lyapunov capacity (the base controller)
-    + the model's own storm_active / drop calibration. That isolates raw model judgment.
+    experiment. Off: anticipation tools (forecast/calendar), learning, operator intents.
+    On: only Lyapunov capacity (the base controller) + the model's own storm_active /
+    drop calibration. That isolates raw model judgment.
     """
     non_rt = build_non_rt_agent(model_obj, system_prompt=_MC_PROMPT)
     policy = SharedPolicy()
@@ -242,7 +242,7 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
 
     await asyncio.gather( # run the three coroutines concurrently: the sim host's watch, the control loop, and the assessment loop
         _watch(),
-        run_control_loop(policy, stop_event, 1.0, stats, memory=None, release_valve=False),
+        run_control_loop(policy, stop_event, 1.0, stats, memory=None),
         run_assessment_loop(non_rt, policy, stop_event, args.assessment_interval, stats,
                             window_s=args.window_s),
     )

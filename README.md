@@ -44,7 +44,9 @@ waits for it.
 agents/
 ├── orchestrator.py         starts the episode, launches loops, routes intents
 ├── non_rt_agent.py         LLM storm judge — telemetry-window trends → policy
-├── near_rt_control_loop.py PURE-CODE 1 Hz loop — c_star + policy → clamp → actuate
+└── near_rt_control_loop.py PURE-CODE 1 Hz loop — c_star + policy → clamp → actuate
+
+shared/
 └── policy.py               SharedPolicy: atomic storm_active / malicious_drop_prob handoff
 
 mcp_server/
