@@ -32,8 +32,8 @@ cost. Only models whose OpenRouter reasoning toggle is actually honored are run
 both ways (per the --probe evidence); the rest run once in a working mode.
 
 Usage (source the shell env for the OpenRouter key first):
-    python -m scripts.experiment_model_comparison --probe
-    python -m scripts.experiment_model_comparison --seeds 5 --save
+    python -m scripts.exp1_model_comparison_non_rt --probe
+    python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save
 """
 
 import argparse      # parse the --probe / --seeds / --rt-factor CLI flags
@@ -58,7 +58,8 @@ from agents.non_rt_agent import build_non_rt_agent, compose_system_prompt, run_a
 from agents.near_rt_control_loop import run_control_loop                 # the deterministic 1 Hz fast loop
 from shared.policy import SharedPolicy, RunStats     # judge↔loop handoff + per-episode counters/usage
 from runtime import host as sim_host, UP                 # the sim host (owns the episode) + utility params
-from sim.metrics import resilience_multi, benign_success_rate, malicious_blocked_rate  # ground-truth scoring
+from sim.metrics import (resilience_multi, benign_success_rate, malicious_blocked_rate,
+                         benign_false_positive_rate)  # ground-truth scoring
 
 # ---------------------------------------------------------------------------
 # Candidate models — MID + SMALL only (the deploy tier; the judge task is light,
@@ -277,6 +278,9 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
         "final_P":                round(final_P, 4),
         "benign_success_rate":    round(benign_success_rate(st), 4),
         "malicious_blocked_rate": round(malicious_blocked_rate(st), 4),
+        # false-positive filtering — on single_storm (no botnet) this is pure over-filtering:
+        # 0 = judge correctly withheld the filter, >0 = it wrongly filtered a benign surge
+        "benign_fp_rate":         round(benign_false_positive_rate(st), 4),
         "non_rt_assessments":     stats.non_rt_assessments,
         "non_rt_errors":          stats.non_rt_errors,
         "llm_requests":           stats.llm_requests,
@@ -306,10 +310,12 @@ async def probe(args) -> None:
             dt = time.monotonic() - t0
             reachable = r["llm_requests"] > 0 and r["non_rt_errors"] < r["non_rt_assessments"]
             row.update(status="OK" if reachable else "SUSPECT",
-                       P=r["final_P"], benign=r["benign_success_rate"],
+                       P=r["final_P"], benign=r["benign_success_rate"], fp=r["benign_fp_rate"],
                        assess=r["non_rt_assessments"], errors=r["non_rt_errors"],
                        tin=r["llm_input_tokens"], tout=r["llm_output_tokens"], lat=dt)
+            # fp>0 here means the model over-filtered the BENIGN single_storm surge (no botnet)
             print(f"[probe] {row['status']:7s} [{tier:5s} rsn={mode:4s}] {slug.split(':')[-1]:38s}  "
+                  f"benign={r['benign_success_rate']:.3f} fp={r['benign_fp_rate']:.3f} "
                   f"assess={r['non_rt_assessments']} errors={r['non_rt_errors']} "
                   f"tok={r['llm_input_tokens']}/{r['llm_output_tokens']} {dt:.0f}s")
         except Exception as e:
@@ -376,6 +382,7 @@ async def sweep(args) -> None:
         per_scn: dict[str, dict] = {}
         for scenario in scenarios:
             P, benign, blocked, errs = [], [], [], []
+            fp = []                                    # benign false-positive rate (over-filtering)
             in_tok, out_tok, lat = [], [], []          # episode totals (per seed)
             in_tok_a, out_tok_a = [], []               # per-assessment means (per seed)
             for seed in seeds:
@@ -386,13 +393,14 @@ async def sweep(args) -> None:
                     continue
                 P.append(r["final_P"]); benign.append(r["benign_success_rate"])
                 blocked.append(r["malicious_blocked_rate"]); errs.append(r["non_rt_errors"])
+                fp.append(r["benign_fp_rate"])
                 in_tok.append(r["llm_input_tokens"]); out_tok.append(r["llm_output_tokens"])
                 in_tok_a.append(r["mean_input_tokens"]); out_tok_a.append(r["mean_output_tokens"])
                 lat.append(r["mean_assessment_latency_s"])
                 print(f"[bakeoff] [{tier:5s} rsn={mode:4s}] {slug.split(':')[-1]:30s} {scenario:16s} "
                       f"seed={seed}  P={r['final_P']:.3f} benign={r['benign_success_rate']:.3f} "
-                      f"blocked={r['malicious_blocked_rate']:.3f} err={r['non_rt_errors']} "
-                      f"tok={r['llm_input_tokens']}/{r['llm_output_tokens']}")
+                      f"blocked={r['malicious_blocked_rate']:.3f} fp={r['benign_fp_rate']:.3f} "
+                      f"err={r['non_rt_errors']} tok={r['llm_input_tokens']}/{r['llm_output_tokens']}")
             if not P:
                 continue
             mean_in, mean_out = statistics.mean(in_tok), statistics.mean(out_tok)
@@ -401,6 +409,7 @@ async def sweep(args) -> None:
                 "P_mean": statistics.mean(P),           "P_std": _sd(P),
                 "benign_mean": statistics.mean(benign), "benign_std": _sd(benign),
                 "blocked_mean": statistics.mean(blocked), "blocked_std": _sd(blocked),
+                "fp_mean": statistics.mean(fp), "fp_std": _sd(fp),   # over-filtering (key on single_storm)
                 "errors_total": sum(errs),
                 "in_tokens_mean": mean_in, "out_tokens_mean": mean_out,            # per-episode totals (mean over seeds)
                 "in_tokens_per_asmt": statistics.mean(in_tok_a),                    # per-assessment (mean over seeds)
@@ -439,14 +448,14 @@ def _print_scorecard(results, scenarios, seeds, elapsed) -> None:
     print("=" * 100)
     for scenario in scenarios:
         print(f"\n  --- {scenario} ---")
-        print(f"  {'model':40s} {'rsn':>6s} {'P':>12s} {'benign':>7s} {'blocked':>7s} {'err':>4s} "
+        print(f"  {'model':40s} {'rsn':>6s} {'P':>12s} {'benign':>7s} {'blocked':>7s} {'fp':>6s} {'err':>4s} "
               f"{'$/ep':>8s} {'lat_s':>6s}")
         rows = [(m, d) for m, d in results.items() if scenario in d["scenarios"]]
         rows.sort(key=lambda md: md[1]["scenarios"][scenario]["P_mean"], reverse=True)
         for _, d in rows:
             s = d["scenarios"][scenario]
             print(f"  {d['slug'].split(':')[-1]:40s} {d['reasoning']:>6s} {s['P_mean']:.3f}±{s['P_std']:.3f} "
-                  f"{s['benign_mean']:>7.3f} {s['blocked_mean']:>7.3f} {s['errors_total']:>4d} "
+                  f"{s['benign_mean']:>7.3f} {s['blocked_mean']:>7.3f} {s['fp_mean']:>6.3f} {s['errors_total']:>4d} "
                   f"{s['usd_per_episode']:>8.4f} {s['mean_latency_s']:>6.1f}")
     print(f"\n  wall time: {elapsed:.0f}s")
     print("=" * 100)

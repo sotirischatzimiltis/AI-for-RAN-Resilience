@@ -9,6 +9,16 @@ def benign_success_rate(stats) -> float:
     outcomes = stats.benign_completed + stats.benign_failed + getattr(stats, "benign_dropped", 0)
     return stats.benign_completed / outcomes if outcomes > 0 else 1.0
 
+def benign_false_positive_rate(stats) -> float:
+    """Fraction of LEGITIMATE users dropped at admission by the malicious filter — the
+    filter's collateral. On a benign-only surge (no botnet, e.g. single_storm) this is
+    pure OVER-FILTERING: 0.0 means the judge correctly withheld the filter, >0 means it
+    wrongly treated a benign surge as an attack. Isolates the deliberate filter drop from
+    capacity-starvation failures (which benign_success_rate also folds in)."""
+    dropped  = getattr(stats, "benign_dropped", 0)
+    outcomes = stats.benign_completed + stats.benign_failed + dropped
+    return dropped / outcomes if outcomes > 0 else 0.0
+
 def per_storm_blocked(telemetry, storms) -> list[float]:
     # Fraction of botnet UEs dropped at admission DURING each storm window, from the
     # cumulative counters in telemetry. For each (t0, td):

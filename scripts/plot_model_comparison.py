@@ -1,7 +1,7 @@
 """
 Plot the model bake-off (Experiment 1) results.
 
-Reads results/model_comparison.json (written by experiment_model_comparison.py
+Reads results/model_comparison.json (written by exp1_model_comparison_non_rt.py
 --save) and renders a 4-panel figure to results/model_comparison.png:
 
   (a) Resilience P per model, grouped by scenario, with ±std error bars.

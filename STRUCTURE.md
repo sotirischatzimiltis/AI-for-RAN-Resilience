@@ -108,7 +108,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 **Experiment scripts:**
 | Script | Experiment |
 |---|---|
-| `experiment_model_comparison.py` | **Exp 1: LLM bake-off — self-contained** (own bare-judge episode; does not use `run_episode`) |
+| `exp1_model_comparison_non_rt.py` | **Exp 1: LLM bake-off — self-contained** (own bare-judge episode; does not use `run_episode`) |
 | `experiment_phaseA_headline.py` | **Exp A: headline** — Static(c=1/8/16) + Lyapunov vs agentic (gemini); self-contained, same as Exp 1 |
 | `plot_model_comparison.py` | plot Exp 1 results (`model_comparison.json` → 4-panel `model_comparison.png`) |
 | `table_model_comparison.py` | tabulate Exp 1 results (`model_comparison.json` → markdown + `model_comparison_table.tex`) |
@@ -123,5 +123,5 @@ measures only `storm_active` + `malicious_drop_prob`.
 - **Live runs** source `~/.zshrc` for the OpenRouter key and pass `--model openrouter:<slug>`.
 
 ## Experiment plan (phases)
-- **Exp 1** — model bake-off → pick the judge LLM (`experiment_model_comparison.py`)
+- **Exp 1** — model bake-off → pick the judge LLM (`exp1_model_comparison_non_rt.py`)
 - **A** headline (Static/Lyapunov/Agentic) · **B** ablations · **C** learning curve · **D** robustness (κ, provisioning, cadence) · **E** orchestrator/intents
