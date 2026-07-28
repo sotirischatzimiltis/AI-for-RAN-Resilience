@@ -1,39 +1,20 @@
 """
 Model bake-off — pick the storm-judge LLM used for the rest of the campaign.
 
-Runs a set of candidate models as the Non-RT storm judge under IDENTICAL
-conditions and scores them on the full metric set, so the winner is chosen on
-evidence, not vibes. Every model runs the BARE judge (no additional
-functionalities): telemetry-only detection with the forecast + calendar tools
-disabled, no learning, no operator intents, no scheduled pre-provisioning event.
-That isolates the model's raw storm-vs-noise judgment; the mechanisms it
-normally sits on top of are added back only in the later experiments (A-E).
+Runs each candidate model as the Non-RT storm judge under IDENTICAL conditions, so the
+winner is chosen on evidence. Every model runs the BARE judge — telemetry-only detection,
+forecast/calendar/learning/intents all off — isolating raw storm-vs-noise judgment; the
+mechanisms it normally sits on are added back in later experiments (A-E).
 
-Scenarios: single_storm (utility only, no botnet) and multi_storm_flat (three
-IDENTICAL storms with a botnet — exercises detection + filtering fairly).
-
-Metrics reported per model (mean over seeds):
-  resilience   — P (per-storm + episode)
-  security     — benign-served rate, botnet-blocked rate
-  robustness   — non_rt_errors (a model that loops / emits bad output is gated out)
-  cost         — LLM input/output tokens, estimated USD, mean assessment latency
-
-Two modes:
-  --probe   1 cheap run per model to confirm the API key reaches it and it emits
-            a valid PolicyUpdate. ALWAYS run this first — a dead model slug or a
-            model that can't do tool-calling / structured output fails here for
-            cents instead of wasting the full sweep.
-  (default) the full seed sweep over both scenarios, saved to results/.
-
-Reasoning ablation: each CANDIDATES entry lists the reasoning mode(s) to run. A
-model listing on+off runs twice (two scorecard rows, rsn column) — this isolates
-whether reasoning effort buys anything on a task this light, at what token/latency
-cost. Only models whose OpenRouter reasoning toggle is actually honored are run
-both ways (per the --probe evidence); the rest run once in a working mode.
+Scenarios: single_storm (utility only, no botnet) and multi_storm_flat (three identical
+botnet storms). Per model, mean over seeds: resilience P, benign-served + botnet-blocked
+rates, benign false-positive (over-filtering) rate, non_rt_errors, tokens, USD, latency.
+Reasoning: a CANDIDATES entry may list on+off to run twice (two scorecard rows) and see
+whether reasoning effort buys anything; only models whose toggle actually works run both.
 
 Usage (source the shell env for the OpenRouter key first):
-    python -m scripts.exp1_model_comparison_non_rt --probe
-    python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save
+    python -m scripts.exp1_model_comparison_non_rt --probe          # 1 cheap run/model FIRST
+    python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save  # full sweep -> results/
 """
 
 import argparse      # parse the --probe / --seeds / --rt-factor CLI flags
@@ -49,6 +30,9 @@ from pathlib import Path  # locate the repo root and the MC prompt file
 # imports below resolve when run as a module from anywhere.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from pydantic_ai.models.openai import OpenAIChatModel        # judge model (used for OpenRouter slugs)
+from pydantic_ai.providers.openrouter import OpenRouterProvider
+
 from mcp_server.server import mcp, MCP_HOST, MCP_PORT   # the MCP server exposing get_episode_stats
 from scripts.run import resolve_model                   # turn a model string into a pydantic-ai model
 # Low-level building blocks — this experiment runs its OWN self-contained episode
@@ -61,24 +45,11 @@ from runtime import host as sim_host, UP                 # the sim host (owns th
 from sim.metrics import (resilience_multi, benign_success_rate, malicious_blocked_rate,
                          benign_false_positive_rate)  # ground-truth scoring
 
-# ---------------------------------------------------------------------------
-# Candidate models — MID + SMALL only (the deploy tier; the judge task is light,
-# so no frontier). Two clean within-provider size pairs (Google, Qwen) let us see
-# size-scaling with provider held fixed; a mixed Anthropic+Tencent pair adds
-# provider diversity. OpenRouter slugs; edit freely. The --probe pass tells you
-# which are actually reachable before you spend on the full sweep.
-# ---------------------------------------------------------------------------
-# (tier, modes, slug). `modes` lists the reasoning settings to RUN for this model:
-#   "n/a" = plain call (no reasoning param);  "on"/"off" = OpenRouter reasoning enabled/disabled.
-# Choices are grounded in the --probe evidence:
-#   • gpt-5.4-mini — reasoning toggle demonstrably works → run on+off (the reasoning ablation).
-#   • qwen3.7-plus — thinking mode rejects tool_choice=required (400 error) and our structured
-#     output NEEDS it; also thinking may be its default, so we PIN it to "off" (which works).
-#   • claude-haiku-4.5 — thinking WON'T engage via OpenRouter: enabled/effort/max_tokens
-#     budget all left tokens unchanged (probe: on==off), because Anthropic thinking is
-#     incompatible with the tool_choice=required our structured output forces (same root
-#     cause as qwen's 400, but silent). Run ONCE in default mode.
-#   • gemini-flash-lite, gpt-4o-mini — not reasoning models → single plain run.
+# Candidate models — MID + SMALL only (deploy tier; the judge task is light). OpenRouter
+# slugs; --probe tells you which are reachable before the full sweep.
+# (tier, modes, slug); modes = reasoning settings to RUN: "n/a" plain call, "on"/"off" toggle.
+# Reasoning modes chosen from --probe evidence: gpt-5.4-mini toggles cleanly (run on+off);
+# qwen3.7-plus + claude-haiku can't engage thinking with our forced tool_choice, so run once.
 CANDIDATES = [
     ("small", ["n/a"],       "openrouter:google/gemini-3.1-flash-lite"),
     ("small", ["off"],       "openrouter:qwen/qwen3.7-plus"),
@@ -105,14 +76,9 @@ _SCENARIOS = {
 
 
 class _Tee:
-    """Duplicate every write to several streams (e.g. the terminal AND a log file),
-    so a run is captured to disk without changing any of the print() calls or piping
-    through `tee` on the command line. Installed on sys.stdout/stderr in __main__.
-
-    Proxies isatty() and any other stream attribute to the FIRST (real) stream, so
-    libraries that introspect the stream — e.g. uvicorn's logging setup calling
-    sys.stdout.isatty() — keep working. (Without this the MCP server fails to start
-    and every judge tool-call ConnectErrors.)"""
+    """Fan every write out to several streams (terminal + log file)
+      — the `--log` capture; proxies stream attrs to the first (real) stream so uvicorn's
+        isatty() checks keep working."""
     def __init__(self, *streams):
         self._streams = streams
     def write(self, data):
@@ -144,7 +110,7 @@ def _prevent_sleep():
     except (FileNotFoundError, OSError):
         pass
 
-
+# calculate money spent
 def _usd(model_str: str, in_tok: float, out_tok: float) -> float:
     slug = model_str.split(":", 1)[1] if ":" in model_str else model_str
     pin, pout = PRICES.get(slug, (0.0, 0.0))
@@ -157,6 +123,7 @@ def _usd(model_str: str, in_tok: float, out_tok: float) -> float:
 # reject a non-default temperature, so those keep the provider default.
 JUDGE_TEMPERATURE = 0.2
 
+# essentailly just get the model to be used as the non-rt agent LLM
 def build_judge_model(model_str: str, mode: str):
     """Build the judge model, pinning temperature and optionally forcing reasoning on/off.
 
@@ -179,8 +146,6 @@ def build_judge_model(model_str: str, mode: str):
     """
     if not model_str.startswith("openrouter:"):
         return resolve_model(model_str)   # test / ollama / bare — leave untouched
-    from pydantic_ai.models.openai import OpenAIChatModel
-    from pydantic_ai.providers.openrouter import OpenRouterProvider
     name = model_str.split(":", 1)[1]
     if mode == "n/a":
         settings = {"temperature": JUDGE_TEMPERATURE}
@@ -196,7 +161,7 @@ def build_judge_model(model_str: str, mode: str):
         settings = {"max_tokens": 8000, "extra_body": {"reasoning": reasoning}}
     return OpenAIChatModel(name, provider=OpenRouterProvider(), settings=settings)
 
-
+# you can say from commnad line which model you want
 def select_candidates(models_filter):
     """Optionally restrict CANDIDATES to those whose slug contains any given
     substring (e.g. --models gpt-5.4). None/empty → all candidates."""
@@ -207,7 +172,6 @@ def select_candidates(models_filter):
         sys.exit(f"--models {models_filter} matched no candidate slugs: "
                  f"{[c[2].split('/')[-1] for c in CANDIDATES]}")
     return picked
-
 
 def expand_runs(candidates):
     """Expand each candidate into one run per listed mode. Models with a single mode
@@ -223,11 +187,10 @@ def expand_runs(candidates):
     return runs
 
 
-# Trimmed bare-judge system prompt (telemetry-only detection + filter calibration,
-# no anticipation tools) — the frozen prompt under test for every model.
+# Load system prompt
 _MC_PROMPT = (Path(__file__).parent.parent / "prompts" / "exp1_model_comparison_non_rt_system_prompt.md").read_text()
 
-
+# Method that runs one model X one scenario X One Seed and returns results
 async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
     """Self-contained bare-judge episode — the LLM storm judge over the deterministic
     fast loop, with EVERY add-on off. Deliberately does NOT call
@@ -291,7 +254,7 @@ async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:
         "mean_assessment_latency_s": round(stats.llm_latency_s / max(1, stats.non_rt_assessments), 2),
     }
 
-
+# Run each model once for reachability
 async def probe(args) -> None:
     """One cheap run per model to confirm reachability + valid structured output.
     Each run is a real single-seed single_storm episode, so the end-of-run summary
@@ -325,7 +288,7 @@ async def probe(args) -> None:
 
     _print_probe_summary(rows)
 
-
+# format and print results from probe run 
 def _print_probe_summary(rows) -> None:
     ok = [r for r in rows if r["status"] == "OK"]
     print("\n" + "=" * 94)
