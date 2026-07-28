@@ -19,13 +19,13 @@ class PolicyView:
     lyapunov_V/W here are the EFFECTIVE weights: an operator override (set via a
     routed intent) takes precedence over the Non-RT judge's autonomous tuning.
     min_servers is an operator SLA capacity floor (default 1)."""
-    malicious_drop_prob:  float
-    storm_active:         bool
-    queue_hold_threshold: int
-    lyapunov_V:           float
-    lyapunov_W:           float
-    min_servers:          int
-    last_updated:         float
+    malicious_drop_prob:  float   # absorption lever: fraction of botnet UEs to drop (when storm_active)
+    storm_active:         bool    # judge's current verdict — gates the drop lever in the fast loop
+    queue_hold_threshold: int     # fast loop won't scale DOWN while queue_len is at/above this
+    lyapunov_V:           float   # EFFECTIVE utility weight (operator override, else judge's)
+    lyapunov_W:           float   # EFFECTIVE cost weight (operator override, else judge's)
+    min_servers:          int     # operator SLA capacity floor (default 1)
+    last_updated:         float   # monotonic timestamp of the last write (for staleness/context)
 
 
 @dataclass
@@ -45,15 +45,17 @@ class SharedPolicy:
     lyapunov_W           — Lyapunov server-cost weight (O(1); nominal 1). Higher W
                            penalises servers → the loop provisions FEWER.
     """
+    # --- operational levers: written EVERY assessment by the judge ---
     malicious_drop_prob:  float = 0.0
     storm_active:         bool  = False
+    # --- slow tuning knobs: only move when the judge sets tighten=True ---
     queue_hold_threshold: int   = 10
     lyapunov_V:          float = 1.0    # normalised O(1) scale (was 1000); nominal load-tracking
     lyapunov_W:          float = 1.0
 
     # Operator overrides, set by a routed intent via set_operator(). When present
     # they OUTRANK the Non-RT judge's autonomous tuning (an operator command wins).
-    operator_V:          float | None = None
+    operator_V:          float | None = None   # None = no override -> use the judge's lyapunov_V
     operator_W:          float | None = None
     min_servers:         int = 1
     # A standing instruction the Orchestrator delegated to the Non-RT judge (operational
@@ -63,6 +65,9 @@ class SharedPolicy:
     last_updated: float = field(default=0.0, repr=False)
 
     def __post_init__(self):
+        # One lock guards every read/write: the judge writes from its async task while
+        # the 1 Hz fast loop reads each tick — the lock keeps updates atomic so the loop
+        # never sees a half-applied policy.
         self._lock = threading.Lock()
 
     def set_operator(
@@ -76,11 +81,11 @@ class SharedPolicy:
         Non-RT judge until cleared. Pass a value to set it; None leaves it unchanged."""
         with self._lock:
             if lyapunov_V is not None:
-                self.operator_V = max(0.0, float(lyapunov_V))
+                self.operator_V = max(0.0, float(lyapunov_V))   # clamp >= 0
             if lyapunov_W is not None:
                 self.operator_W = max(0.0, float(lyapunov_W))
             if min_servers is not None:
-                self.min_servers = max(1, int(min_servers))
+                self.min_servers = max(1, int(min_servers))     # never below 1 server
             self.last_updated = time.monotonic()
 
     def set_operator_note(self, note: str) -> None:
@@ -112,9 +117,9 @@ class SharedPolicy:
         behaviour changing on every assessment).
         """
         with self._lock:
-            self.storm_active    = storm_active
+            self.storm_active    = storm_active          # levers: always overwritten
             self.malicious_drop_prob = malicious_drop_prob
-            if tighten:
+            if tighten:                                   # slow knobs: only when the judge asks
                 if queue_hold_threshold is not None:
                     self.queue_hold_threshold = max(1, int(queue_hold_threshold))
                 if lyapunov_V is not None:
@@ -131,6 +136,7 @@ class SharedPolicy:
                 malicious_drop_prob=self.malicious_drop_prob,
                 storm_active=self.storm_active,
                 queue_hold_threshold=self.queue_hold_threshold,
+                # operator override wins over the judge's tuning when present
                 lyapunov_V=self.operator_V if self.operator_V is not None else self.lyapunov_V,
                 lyapunov_W=self.operator_W if self.operator_W is not None else self.lyapunov_W,
                 min_servers=self.min_servers,
@@ -138,14 +144,16 @@ class SharedPolicy:
             )
 
     def context_str(self) -> str:
+        # One-line summary of the CURRENT policy — fed to the judge as its "previous
+        # verdict" line each assessment (continuity / hysteresis).
         with self._lock:
             age_str = ""
-            if self.last_updated:
+            if self.last_updated:                              # how stale is this verdict?
                 age = time.monotonic() - self.last_updated
                 age_str = f", last Non-RT update {age:.0f}s ago"
             op = ""
             if self.operator_V is not None or self.operator_W is not None or self.min_servers > 1:
-                op = (f" Operator override: "
+                op = (f" Operator override: "                  # only shown when an override is set
                       f"V={self.operator_V}, W={self.operator_W}, min_servers={self.min_servers}.")
             return (
                 f"Policy: storm_active={self.storm_active}, "
