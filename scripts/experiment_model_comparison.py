@@ -150,13 +150,22 @@ def _usd(model_str: str, in_tok: float, out_tok: float) -> float:
     return (in_tok * pin + out_tok * pout) / 1e6
 
 
-def build_judge_model(model_str: str, mode: str):
-    """Build the judge model, optionally forcing OpenRouter reasoning on/off.
+# Fixed sampling temperature for the bake-off — low but deployment-like, held
+# IDENTICAL across candidates so results reflect the model, not sampling luck.
+# NOT applied to reasoning-ON runs: those providers (e.g. OpenAI's reasoning models)
+# reject a non-default temperature, so those keep the provider default.
+JUDGE_TEMPERATURE = 0.2
 
-    mode: 'n/a' → passthrough (resolve_model); 'on'/'off' → set OpenRouter's
-    unified `reasoning` body param on the model's default settings, so every
-    agent.run() inherits it without threading through run_episode. Only applied to
-    'openrouter:' models.
+def build_judge_model(model_str: str, mode: str):
+    """Build the judge model, pinning temperature and optionally forcing reasoning on/off.
+
+    Temperature is fixed at JUDGE_TEMPERATURE on every path EXCEPT reasoning-on
+    (which providers force to their default). mode:
+      'n/a' → plain call at fixed temperature.
+      'off' → thinking disabled + fixed temperature.
+      'on'  → thinking engaged; temperature left at the provider default.
+    Reasoning is set via OpenRouter's unified `reasoning` body param, so every
+    agent.run() inherits it. Only applied to 'openrouter:' models.
 
     'on'  → {"effort": "high"}: engages real thinking on BOTH OpenAI (gpt-5.4-mini)
             and Anthropic (claude-haiku) — `enabled:true` alone was a no-op for
@@ -167,16 +176,20 @@ def build_judge_model(model_str: str, mode: str):
     The probe's token/latency (ON => more output tokens + higher latency) confirms
     whether the toggle actually took effect.
     """
-    if mode == "n/a" or not model_str.startswith("openrouter:"):
-        return resolve_model(model_str)
+    if not model_str.startswith("openrouter:"):
+        return resolve_model(model_str)   # test / ollama / bare — leave untouched
     from pydantic_ai.models.openai import OpenAIChatModel
     from pydantic_ai.providers.openrouter import OpenRouterProvider
     name = model_str.split(":", 1)[1]
-    if mode == "off":
-        settings = {"extra_body": {"reasoning": {"enabled": False}}}
+    if mode == "n/a":
+        settings = {"temperature": JUDGE_TEMPERATURE}
+    elif mode == "off":
+        settings = {"temperature": JUDGE_TEMPERATURE,
+                    "extra_body": {"reasoning": {"enabled": False}}}
     else:  # on — engage thinking. Anthropic ignored enabled/effort, so give it an
            # explicit reasoning-token BUDGET; OpenAI already engages via effort.
            # The response max_tokens must exceed the thinking budget or it can't fit.
+           # No temperature here — reasoning models require the provider default.
         is_anthropic = "anthropic/" in name or "claude" in name
         reasoning = {"max_tokens": 2000} if is_anthropic else {"effort": "high"}
         settings = {"max_tokens": 8000, "extra_body": {"reasoning": reasoning}}
@@ -211,7 +224,7 @@ def expand_runs(candidates):
 
 # Trimmed bare-judge system prompt (telemetry-only detection + filter calibration,
 # no anticipation tools) — the frozen prompt under test for every model.
-_MC_PROMPT = (Path(__file__).parent.parent / "prompts" / "prompts_mc_non_rt.md").read_text()
+_MC_PROMPT = (Path(__file__).parent.parent / "prompts" / "exp1_model_comparison_non_rt_system_prompt.md").read_text()
 
 
 async def _bare_judge_run(model_obj, scenario, seed, args) -> dict:

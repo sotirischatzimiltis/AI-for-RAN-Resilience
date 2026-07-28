@@ -8,7 +8,7 @@ campaign (Phases A–E).
 operator intents), real-time pacing (`rt_factor=1`), 5 seeds, two
 scenarios: `single_storm` (utility only, no botnet) and `multi_storm_flat` (three
 identical storms with a botnet — the discriminating scenario). Frozen prompt:
-`prompts/prompts_mc_non_rt.md`. Reasoning-capable models run on+off where the
+`prompts/exp1_model_comparison_non_rt_system_prompt.md`. Reasoning-capable models run on+off where the
 OpenRouter reasoning toggle is honoured (only `gpt-5.4-mini`).
 
 ## Reproduce
@@ -56,5 +56,5 @@ python -m scripts.plot_model_comparison
 - `model_comparison_table.tex` — LaTeX (booktabs) table for the paper
 
 The runner and prompt are **not duplicated here** — they live in
-`scripts/experiment_model_comparison.py` and `prompts/prompts_mc_non_rt.md`
+`scripts/experiment_model_comparison.py` and `prompts/exp1_model_comparison_non_rt_system_prompt.md`
 (the reproduce commands above invoke them).

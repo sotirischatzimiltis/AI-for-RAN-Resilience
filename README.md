@@ -65,7 +65,7 @@ sim/                            the simulator (the "world"; no AI) — see sim/R
 
 prompts/
 ├── non_rt.md                   full-system storm-judge prompt
-├── prompts_mc_non_rt.md        bare-judge prompt (Experiment 1 model bake-off)
+├── exp1_model_comparison_non_rt_system_prompt.md        bare-judge prompt (Experiment 1 model bake-off)
 ├── prompts_phaseA_non_rt.md    Phase A headline judge prompt
 └── orchestrator.md             operator-intent prompt
 

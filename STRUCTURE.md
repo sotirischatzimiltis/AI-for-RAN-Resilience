@@ -61,7 +61,7 @@ The judge's **decision surface** (`PolicyUpdate`) is: `storm_active`, `malicious
 
 | Setting | **Full system** (`run.py` → `run_episode`) | **Bare judge** (Exp 1) |
 |---|---|---|
-| Prompt | `prompts/non_rt.md` | `prompts/prompts_mc_non_rt.md` |
+| Prompt | `prompts/non_rt.md` | `prompts/exp1_model_comparison_non_rt_system_prompt.md` |
 | Tools offered | `stats` + `forecast` + `calendar` | `get_episode_stats` only |
 | Capacity knobs (V/W/queue_hold) | judge tunes them (`tighten=true`) to pre-provision | **inert** — prompt forces `tighten=false`; capacity is fixed Lyapunov (V=1, W=1) |
 | Release valve (code-side filter drop) | on | off |
@@ -79,7 +79,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 |---|---|
 | `non_rt.md` | full judge prompt (used by the full system, phases A–E) |
 | `orchestrator.md` | operator-intent prompt |
-| `prompts_mc_non_rt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
+| `exp1_model_comparison_non_rt_system_prompt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
 | `prompts_phaseA_non_rt.md` | dedicated **Phase A** judge prompt (detection + filter) |
 
 ### `mcp_server/` — tools the judge can call
