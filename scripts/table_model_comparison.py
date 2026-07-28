@@ -1,14 +1,14 @@
 """
 Render the model bake-off (Experiment 1) results as a TABLE.
 
-Reads results/model_comparison.json and prints, for the discriminating scenario
+Reads experiments/exp1_model_comparison/model_comparison.json and prints, for the discriminating scenario
 (multi_storm_flat by default), a table ranked by botnet-blocked rate:
 
     Model | Reasoning | Blocked (mean±std) | Benign | P | $/episode | Latency | Err
 
 Emits two formats:
   • a readable Markdown table (stdout)
-  • a LaTeX booktabs table, saved to results/model_comparison_table.tex
+  • a LaTeX booktabs table, saved to experiments/exp1_model_comparison/model_comparison_table.tex
 
 Run after a sweep (and after blocked_std is present — new sweeps store it; older
 runs can be backfilled from the logs):
@@ -21,7 +21,7 @@ import json
 import sys
 from pathlib import Path
 
-_DEFAULT_JSON = Path(__file__).parent.parent / "results" / "model_comparison.json"
+_DEFAULT_JSON = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison" / "model_comparison.json"
 
 
 def _rows(models: dict, scenario: str):

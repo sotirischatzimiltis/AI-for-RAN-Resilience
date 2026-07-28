@@ -1,8 +1,8 @@
 """
 Plot the model bake-off (Experiment 1) results.
 
-Reads results/model_comparison.json (written by exp1_model_comparison_non_rt.py
---save) and renders a 4-panel figure to results/model_comparison.png:
+Reads experiments/exp1_model_comparison/model_comparison.json (written by exp1_model_comparison_non_rt.py
+--save) and renders a 4-panel figure to experiments/exp1_model_comparison/model_comparison.png:
 
   (a) Resilience P per model, grouped by scenario, with ±std error bars.
   (b) Security per model on the botnet scenario: benign-served + botnet-blocked.
@@ -11,7 +11,7 @@ Reads results/model_comparison.json (written by exp1_model_comparison_non_rt.py
 
 Run AFTER a sweep:
     python -m scripts.plot_model_comparison
-    python -m scripts.plot_model_comparison --json results/model_comparison.json
+    python -m scripts.plot_model_comparison --json experiments/exp1_model_comparison/model_comparison.json
 """
 
 import argparse
@@ -24,7 +24,7 @@ matplotlib.use("Agg")           # headless: write a PNG, no display needed
 import matplotlib.pyplot as plt
 import numpy as np
 
-_DEFAULT_JSON = Path(__file__).parent.parent / "results" / "model_comparison.json"
+_DEFAULT_JSON = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison" / "model_comparison.json"
 # scenario used for the security panel (the only one with a botnet)
 _SEC_SCENARIO = "multi_storm_flat"
 

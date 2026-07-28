@@ -17,3 +17,6 @@ scripts/make_results.py
 scripts/compare_baselines.py
 scripts/plot_compare.py
 results/
+
+# Exp 1 run logs (large; regenerable) — keep the json/png/tex, drop the logs
+experiments/exp1_model_comparison/logs/

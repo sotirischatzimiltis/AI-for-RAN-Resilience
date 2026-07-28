@@ -14,12 +14,12 @@ whether reasoning effort buys anything; only models whose toggle actually works 
 
 Usage (source the shell env for the OpenRouter key first):
     python -m scripts.exp1_model_comparison_non_rt --probe          # 1 cheap run/model FIRST
-    python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save  # full sweep -> results/
+    python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save  # -> experiments/exp1_model_comparison/
 """
 
 import argparse      # parse the --probe / --seeds / --rt-factor CLI flags
 import asyncio        # the sim, MCP server, and judge loop all run as async tasks
-import json           # write the scorecard to results/model_comparison.json
+import json           # write the scorecard to experiments/exp1_model_comparison/model_comparison.json
 import logging        # silence uvicorn's shutdown-noise logger at the end
 import statistics     # mean / pstdev of P, tokens, latency across seeds
 import sys            # sys.path tweak below so 'python -m scripts.…' finds the repo
@@ -73,6 +73,11 @@ _SCENARIOS = {
     "single_storm":     20.0,
     "multi_storm_flat": None,
 }
+
+# All Exp 1 outputs live together under experiments/exp1_model_comparison/: the
+# results (json/png/tex) directly, the run logs in a gitignored logs/ subfolder.
+_EXP_DIR  = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison"
+_LOGS_DIR = _EXP_DIR / "logs"
 
 
 class _Tee:
@@ -386,8 +391,8 @@ async def sweep(args) -> None:
     _print_scorecard(results, scenarios, seeds, elapsed)
 
     if args.save:
-        out = Path(__file__).parent.parent / "results" / "model_comparison.json"
-        out.parent.mkdir(exist_ok=True)
+        out = _EXP_DIR / "model_comparison.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
         # MERGE into any existing file so partial runs (e.g. gpt-5.4 first, then the
         # rest) accumulate into one JSON. Keep --seeds consistent across partial runs
         # or the merged per-model stats won't be comparable.
@@ -441,10 +446,11 @@ if __name__ == "__main__":
                    help="seconds between judge assessments")
     p.add_argument("--window", type=float, default=15.0, dest="window_s",
                    help="telemetry-window seconds the judge sees each assessment")
-    p.add_argument("--save", action="store_true", help="cache results to results/model_comparison.json")
+    p.add_argument("--save", action="store_true",
+                   help="cache results to experiments/exp1_model_comparison/model_comparison.json")
     p.add_argument("--log", nargs="?", const="AUTO", default=None,
                    help="tee all output to a file. Bare --log auto-names it "
-                        "results/log_model_comparison_<timestamp>.txt; or give a path.")
+                        "experiments/exp1_model_comparison/logs/log_<timestamp>.txt; or give a path.")
     args = p.parse_args()
 
     # Optional: mirror all stdout/stderr to a log file for the whole run.
@@ -453,10 +459,10 @@ if __name__ == "__main__":
         from datetime import datetime
         if args.log == "AUTO":
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            log_path = Path(__file__).parent.parent / "results" / f"log_model_comparison_{stamp}.txt"
+            log_path = _LOGS_DIR / f"log_model_comparison_{stamp}.txt"
         else:
             log_path = Path(args.log)
-        log_path.parent.mkdir(exist_ok=True)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
         _logfile = open(log_path, "w")
         sys.stdout = _Tee(sys.__stdout__, _logfile)
         sys.stderr = _Tee(sys.__stderr__, _logfile)
