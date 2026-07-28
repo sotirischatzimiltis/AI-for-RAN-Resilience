@@ -1,29 +1,33 @@
 """
-FastMCP server — exposes a single tool for the Non-RT judge:
+FastMCP server — the READ tools the Non-RT judge can call during an assessment.
 
-  get_episode_stats — cumulative counters + A3RT resilience score P
-
-The simulation itself is owned by runtime.host (not by this server); this module
-only reads it. Start/stop of an episode is driven in-process via runtime.host.start().
+Three tools: get_episode_stats (cumulative resilience so far), get_calendar (known
+scheduled events) and get_forecast (short-term load prediction). The server does NOT
+own the simulation — it only READS the live episode via runtime.host; start/stop is
+driven in-process by runtime.host.start(). Tools disabled by ablation are hidden from
+the schema by AblationMiddleware, so a bare-judge site (Exp 1) exposes only
+get_episode_stats.
 """
 
 import sys
 from pathlib import Path
 
+# Put the repo root (this file's grandparent) on the import path so 'sim', 'runtime',
+# 'shared' resolve when this module is imported/run from anywhere.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fastmcp import FastMCP
-from fastmcp.server.middleware import Middleware
+from fastmcp import FastMCP                              # the MCP server framework
+from fastmcp.server.middleware import Middleware         # request hooks (used to gate tools)
 
-from sim.metrics import resilience_score, benign_success_rate, malicious_blocked_rate
-from runtime import host, UP
-from shared.event_calendar import summarize_calendar
-from shared.forecast import forecast_signals, summarize_forecast
+from sim.metrics import live_absorption, benign_success_rate, malicious_blocked_rate  # real-time scoring
+from runtime import host, UP                             # the live episode (SimHost) + utility params
+from shared.event_calendar import summarize_calendar     # backs get_calendar
+from shared.forecast import forecast_signals, summarize_forecast  # backs get_forecast
 
-MCP_HOST = "127.0.0.1"
+MCP_HOST = "127.0.0.1"      # loopback — the judge connects over local HTTP
 MCP_PORT = 8000
 
-mcp = FastMCP("StormSim MCP Server")
+mcp = FastMCP("StormSim MCP Server")   # the server; @mcp.tool() registers each tool below
 
 
 class AblationMiddleware(Middleware):
@@ -33,25 +37,30 @@ class AblationMiddleware(Middleware):
     per request against the live host flags, so the same server serves both the full
     system (all tools) and an ablated site."""
 
+    # tool name -> the host flag that must be True for it to be visible. A tool not
+    # listed here (get_episode_stats) is always allowed.
     _GATED = {"get_calendar": "calendar_enabled", "get_forecast": "forecast_enabled"}
 
     def _allowed(self, name: str) -> bool:
-        flag = self._GATED.get(name)
-        return flag is None or getattr(host, flag, True)
+        flag = self._GATED.get(name)                     # None for ungated tools
+        return flag is None or getattr(host, flag, True)  # read the live flag (default: on)
 
     async def on_list_tools(self, context, call_next):
+        # Runs on every "what tools exist?" request. call_next() gets the full list;
+        # we drop the ones disabled by the current ablation flags before returning it.
         tools = await call_next(context)
         return [t for t in tools if self._allowed(t.name)]
 
     async def on_call_tool(self, context, call_next):
-        # Safety net: block a call to a hidden tool (e.g. a stale client cache).
+        # Runs on every tool CALL. Safety net: if a client somehow calls a hidden tool
+        # (e.g. it cached an older tool list), refuse instead of running it.
         if not self._allowed(context.message.name):
             from fastmcp.exceptions import ToolError
             raise ToolError(f"{context.message.name} is disabled at this site (ablation)")
-        return await call_next(context)
+        return await call_next(context)                  # allowed -> run the tool
 
 
-mcp.add_middleware(AblationMiddleware())
+mcp.add_middleware(AblationMiddleware())   # install the gate on the server
 
 
 @mcp.tool()
@@ -63,10 +72,10 @@ def get_calendar() -> dict:
     imminent, raise the Lyapunov utility weight so the fast loop runs more servers
     ahead of the demand. (This is deterministic schedule info, not a prediction.)
     """
-    if not host.calendar_enabled:
+    if not host.calendar_enabled:  # ablation guard (also hidden by middleware)
         return {"disabled": "calendar unavailable at this site (ablation)"}
-    t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0
-    return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)}
+    t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0 # current time
+    return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)} # return calendar summary 
 
 
 @mcp.tool()
@@ -81,70 +90,51 @@ def get_forecast() -> dict:
     PRE-PROVISION (raise lyapunov_V, tighten=true) before a storm is confirmed;
     discount low-confidence projections.
     """
-    if not host.forecast_enabled:
+    if not host.forecast_enabled:       # ablation guard (also hidden by middleware)
         return {"disabled": "forecast unavailable at this site (ablation)"}
-    if host.sim is None or len(host.sim.telemetry) < 3:
+    if host.sim is None or len(host.sim.telemetry) < 3:  # need >=3 points to fit a trend
         return {"error": "insufficient data — episode may not have started yet"}
-    tel = host.sim.telemetry
-    out = forecast_signals(tel)
-    out["summary"] = summarize_forecast(tel)
+    tel = host.sim.telemetry # obtain telemetry data 
+    out = forecast_signals(tel)      # per-signal trend/slope/confidence from a least-squares fit
+    out["summary"] = summarize_forecast(tel)     # one-line human-readable version for the prompt
     return out
 
 
 @mcp.tool()
 def get_episode_stats() -> dict:
-    """Return cumulative counters and the A3RT resilience score P for the CURRENT
-    storm — the active one, or the most recent if we're now recovering.
+    """Cumulative episode counters + a REAL-TIME filtering-effectiveness signal.
 
-    Scoping P to the current storm (rather than a fixed early window) is what makes
-    absorption a LIVE feedback signal in a multi-storm episode: it reflects the storm
-    the judge is handling now, not a frozen first-storm score.
-    P = w1*absorption + w2*adaptation + w3*trec  (weights 0.4 / 0.4 / 0.2).
-    u_des is auto-calibrated to the mean pre-storm utility baseline.
+    Everything here is computable ONLINE from telemetry — no knowledge of when storms
+    start or end (unlike the offline resilience_multi used to score the run). The key
+    field is `absorption`: over the recent window, how well utility is being held near
+    the calm baseline. High = the filter is coping; falling while load stays high = push
+    harder. `recovered` = utility back at baseline and holding (the disturbance passed).
     """
-    if host.sim is None or len(host.sim.telemetry) < 4:
+    if host.sim is None or len(host.sim.telemetry) < 4:  # need a few samples before scoring is meaningful
         return {"error": "insufficient data — episode may not have started yet"}
-    # Pick the current storm window: the most recent storm that has STARTED (so an
-    # active storm gives partial-window feedback, a passed one gives its final score).
-    # Fall back to host.t0/td only if the schedule exposes no storm windows.
-    #
-    # NOTE (real-world caveat): storm_windows() is derived from the KNOWN traffic
-    # schedule — a simulation oracle. In a real deployment the storm boundaries are NOT
-    # given; t0/td would have to be DETECTED online from telemetry — e.g. a change-point
-    # / threshold on lam vs the resting baseline for onset, and lam settling back to rest
-    # for the end — or bootstrapped from the judge's own storm_active True->False
-    # transitions. The scoring window is the one piece that currently assumes ground truth.
-    t_now   = host.sim.telemetry[-1].t
-    windows = host.sim.cfg.traffic.storm_windows()
-    started = [w for w in windows if w[0] <= t_now]
-    t0, td  = started[-1] if started else (windows[0] if windows else (host.t0, host.td))
-    try:
-        r = resilience_score(
-            host.sim.telemetry, host.sim.mu_single, UP,
-            t0=t0, td=td,
-        )
-    except Exception:
-        r = {"P": 0.0, "absorption": 0.0, "adaptation": 0.0,
-             "trec": 0.0, "recovery_time": 0.0}
+    # Real-time absorption: rolling recent window vs the opening-calm baseline. No storm
+    # windows / t0 / td — a deployed agent could compute exactly this from live telemetry.
+    live = live_absorption(host.sim.telemetry, host.sim.mu_single, UP)
     return {
+        # --- raw cumulative counters (whole episode, straight off the sim) ---
         "completed":     host.sim.stats.completed,
         "failed":        host.sim.stats.failed,
         "retries":       host.sim.stats.retries,
         "arrivals":      host.sim.stats.arrivals,
+        # --- security rates (whole episode) ---
         "benign_success_rate":    round(benign_success_rate(host.sim.stats), 4),
         "malicious_blocked_rate": round(malicious_blocked_rate(host.sim.stats), 4),
-        "resilience_P":  round(r["P"], 4),
-        "absorption":    round(r["absorption"], 4),
-        "adaptation":    round(r["adaptation"], 4),
-        "trec":          round(r["trec"], 4),
-        "recovery_time": round(r["recovery_time"], 1),
-        "storm_window":  [round(t0, 1), round(td, 1)],   # which storm this score is for
-        "episode_done":  host.is_done,
+        # --- real-time filtering feedback (recent window vs calm baseline; NO oracle) ---
+        "absorption":    live["absorption"],   # utility held near baseline lately (1=fine, low=degrading)
+        "recovered":     live["recovered"],    # utility back at baseline and holding
+        "episode_done":  host.is_done,         # True once the episode has finished
     }
 
 
 # ---------------------------------------------------------------------------
-# Entry point (run as a standalone process if needed)
+# Entry point — run the server as its OWN process (python -m mcp_server.server).
+# In the experiments the runners host it in-process instead, but this lets you start
+# it standalone (e.g. for manual tool testing). Serves over local HTTP.
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     mcp.run(transport="http", host=MCP_HOST, port=MCP_PORT)

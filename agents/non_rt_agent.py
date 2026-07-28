@@ -66,8 +66,9 @@ class PolicyUpdate(BaseModel):
 # they return "disabled" and naming them would just waste tool calls/tokens.
 def _tool_availability_text(calendar_enabled: bool = True, forecast_enabled: bool = True) -> str:
     tools = [
-        "get_episode_stats — cumulative resilience (P, absorption, adaptation). "
-        "Absorption tells you whether your filter strength has been working."
+        "get_episode_stats — episode counters plus a live 'absorption' signal (how well "
+        "utility is being held near its calm baseline right now). Absorption tells you "
+        "whether your current filter strength is working: high = coping, falling = push harder."
     ]
     if calendar_enabled:
         tools.append(

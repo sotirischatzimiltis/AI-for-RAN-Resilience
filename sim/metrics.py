@@ -318,3 +318,54 @@ def resilience_multi(telemetry: Sequence[TelemetrySample],
     # whole-episode score = plain mean of the per-storm P (every storm weighted equally)
     p_episode = sum(s["P"] for s in per) / len(per) if per else 0.0
     return {"P_episode": p_episode, "per_storm": per, "n_storms": len(per)}
+
+def live_absorption(telemetry: Sequence[TelemetrySample],
+                    mu_single: float,
+                    util_p: UtilityParams,
+                    baseline_s: float = 40.0,
+                    window_s:   float = 30.0,
+                    recovery_frac: float = 0.95,
+                    hold_window:   float = 30.0) -> dict:
+    """REAL-TIME filtering-effectiveness signal — computable online, NO storm-window
+    oracle (unlike resilience_score, which needs t0/td). This is what the running judge
+    should see; the offline resilience_multi keeps using the known windows for scoring.
+
+      absorption : fraction of the calm baseline utility maintained over the RECENT
+                   window [now - window_s, now], capped at 1. Tracks the storm being
+                   handled NOW — high = utility held (filter working), low = degrading.
+      u_des      : the calm baseline — mean utility over the episode's OPENING calm
+                   [t0, t0 + baseline_s] (episodes start calm; a real cell would use a
+                   rolling estimate from recent quiet).
+      recovered  : True if utility has been >= recovery_frac*u_des for the last
+                   hold_window seconds — the same "back-to-baseline and holding" test as
+                   the offline recovery detector, but self-triggered (looks backward from
+                   now) instead of anchored to a known storm end.
+    """
+    ts = [s.t for s in telemetry]
+    us = utility_series(telemetry, mu_single, util_p)
+    if len(ts) < 2:
+        return {"absorption": 1.0, "u_des": 0.0, "recovered": True}
+    t_now = ts[-1]
+
+    # opening-calm baseline u_des: mean utility over the first baseline_s of the episode
+    base  = [u for t, u in zip(ts, us) if t <= ts[0] + baseline_s]
+    u_des = (sum(base) / len(base)) if base else 1.0
+
+    # absorption over the recent window: actual area under u(t) / ideal area at u_des
+    recent = [(t, u) for t, u in zip(ts, us) if t >= t_now - window_s]
+    if len(recent) < 2 or u_des <= 0:
+        absorption = 1.0                      # too little data (or flat baseline) -> treat as fine
+    else:
+        xs  = [t for t, _ in recent]
+        ys  = [u for _, u in recent]
+        den = u_des * (xs[-1] - xs[0])        # ideal: hold u_des across the window
+        absorption = min(1.0, _trapz(ys, xs) / den) if den > 0 else 1.0
+
+    # recovered-now: utility held >= 95% of baseline for the last hold_window seconds
+    target = recovery_frac * u_des
+    held   = [u for t, u in zip(ts, us) if t >= t_now - hold_window]
+    recovered = bool(held) and min(held) >= target
+
+    return {"absorption": round(absorption, 4),
+            "u_des":      round(u_des, 4),
+            "recovered":  recovered}
