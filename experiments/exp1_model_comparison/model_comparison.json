@@ -7,106 +7,114 @@
     5
   ],
   "scenarios": [
-    "multi_storm_flat",
-    "single_storm"
+    "single_storm",
+    "multi_storm_flat"
   ],
   "models": {
-    "openrouter:openai/gpt-5.4-mini::reasoning=on": {
-      "tier": "mid",
-      "reasoning": "on",
-      "slug": "openrouter:openai/gpt-5.4-mini",
-      "scenarios": {
-        "single_storm": {
-          "P_mean": 0.8334,
-          "P_std": 0.0002190890230020423,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.0,
-          "errors_total": 0,
-          "in_tokens_mean": 41074.6,
-          "out_tokens_mean": 6646.2,
-          "usd_per_episode": 0.06071384999999999,
-          "mean_latency_s": 8.196,
-          "blocked_std": 0.0,
-          "benign_std": 0.0
-        },
-        "multi_storm_flat": {
-          "P_mean": 0.83604,
-          "P_std": 0.0012862348152650877,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.65808,
-          "errors_total": 0,
-          "in_tokens_mean": 159103.6,
-          "out_tokens_mean": 24571.6,
-          "usd_per_episode": 0.22989990000000002,
-          "mean_latency_s": 7.526,
-          "blocked_std": 0.0246,
-          "benign_std": 0.0
-        }
-      }
-    },
-    "openrouter:openai/gpt-5.4-mini::reasoning=off": {
-      "tier": "mid",
-      "reasoning": "off",
-      "slug": "openrouter:openai/gpt-5.4-mini",
-      "scenarios": {
-        "single_storm": {
-          "P_mean": 0.8375,
-          "P_std": 0.004509988913511862,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.0,
-          "errors_total": 0,
-          "in_tokens_mean": 64667.8,
-          "out_tokens_mean": 2290.2,
-          "usd_per_episode": 0.058806750000000005,
-          "mean_latency_s": 3.022,
-          "blocked_std": 0.0,
-          "benign_std": 0.0
-        },
-        "multi_storm_flat": {
-          "P_mean": 0.83482,
-          "P_std": 0.0012188519188154347,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.77802,
-          "errors_total": 0,
-          "in_tokens_mean": 244391.8,
-          "out_tokens_mean": 8662,
-          "usd_per_episode": 0.22227284999999997,
-          "mean_latency_s": 3.068,
-          "blocked_std": 0.0482,
-          "benign_std": 0.0
-        }
-      }
-    },
     "openrouter:google/gemini-3.1-flash-lite": {
       "tier": "small",
       "reasoning": "n/a",
       "slug": "openrouter:google/gemini-3.1-flash-lite",
       "scenarios": {
         "single_storm": {
-          "P_mean": 0.83496,
-          "P_std": 0.0019126944345608436,
-          "benign_mean": 1.0,
+          "P_mean": 0.668,
+          "P_std": 0.004183300132670382,
+          "benign_mean": 0.154,
+          "benign_std": 0.0038078865529319575,
           "blocked_mean": 0.0,
-          "errors_total": 0,
-          "in_tokens_mean": 84471.6,
-          "out_tokens_mean": 1891.6,
-          "usd_per_episode": 0.023955300000000002,
-          "mean_latency_s": 1.668,
           "blocked_std": 0.0,
-          "benign_std": 0.0
+          "fp_mean": 0.1684,
+          "fp_std": 0.005128352561983227,
+          "errors_total": 0,
+          "in_tokens_mean": 62517.4,
+          "out_tokens_mean": 1785.2,
+          "in_tokens_per_asmt": 3325.4,
+          "out_tokens_per_asmt": 94.98,
+          "usd_per_episode": 0.01830715,
+          "mean_latency_s": 2.166,
+          "usd_per_assessment": 0.00097382,
+          "P_ci95": 0.005193420452842235,
+          "P_seeds": [
+            0.669,
+            0.669,
+            0.664,
+            0.674,
+            0.664
+          ],
+          "benign_ci95": 0.004727357655181172,
+          "benign_seeds": [
+            0.156,
+            0.151,
+            0.156,
+            0.149,
+            0.158
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.006366669911342969,
+          "fp_seeds": [
+            0.169,
+            0.16,
+            0.172,
+            0.173,
+            0.168
+          ]
         },
         "multi_storm_flat": {
-          "P_mean": 0.83494,
-          "P_std": 0.0011959933110181151,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.79938,
+          "P_mean": 0.7093999999999999,
+          "P_std": 0.00559464029227975,
+          "benign_mean": 0.2656,
+          "benign_std": 0.0029664793948382677,
+          "blocked_mean": 0.9998,
+          "blocked_std": 0.00044721359549995833,
+          "fp_mean": 0.1556,
+          "fp_std": 0.004979959839195498,
           "errors_total": 0,
-          "in_tokens_mean": 307547.8,
-          "out_tokens_mean": 6857.4,
-          "usd_per_episode": 0.08717304999999999,
-          "mean_latency_s": 1.964,
-          "blocked_std": 0.0375,
-          "benign_std": 0.0
+          "in_tokens_mean": 281987.8,
+          "out_tokens_mean": 7706,
+          "in_tokens_per_asmt": 3333.18,
+          "out_tokens_per_asmt": 91.10000000000001,
+          "usd_per_episode": 0.08205595,
+          "mean_latency_s": 2.15,
+          "usd_per_assessment": 0.0009699449999999999,
+          "P_ci95": 0.00694554978097487,
+          "P_seeds": [
+            0.714,
+            0.701,
+            0.715,
+            0.709,
+            0.708
+          ],
+          "benign_ci95": 0.0036827801672106386,
+          "benign_seeds": [
+            0.267,
+            0.261,
+            0.269,
+            0.265,
+            0.266
+          ],
+          "blocked_ci95": 0.0005552000000000004,
+          "blocked_seeds": [
+            0.999,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.006182445548486462,
+          "fp_seeds": [
+            0.159,
+            0.157,
+            0.156,
+            0.147,
+            0.159
+          ]
         }
       }
     },
@@ -116,30 +124,104 @@
       "slug": "openrouter:qwen/qwen3.7-plus",
       "scenarios": {
         "single_storm": {
-          "P_mean": 0.83348,
-          "P_std": 0.0002135415650406027,
-          "benign_mean": 1.0,
+          "P_mean": 0.6682,
+          "P_std": 0.007014271166700079,
+          "benign_mean": 0.1528,
+          "benign_std": 0.003962322551231794,
           "blocked_mean": 0.0,
-          "errors_total": 0,
-          "in_tokens_mean": 74334,
-          "out_tokens_mean": 2082.6,
-          "usd_per_episode": 0.026452608,
-          "mean_latency_s": 3.9299999999999997,
           "blocked_std": 0.0,
-          "benign_std": 0.0
+          "fp_mean": 0.1678,
+          "fp_std": 0.0032710854467592173,
+          "errors_total": 0,
+          "in_tokens_mean": 68028.6,
+          "out_tokens_mean": 2303.4,
+          "in_tokens_per_asmt": 4098.1,
+          "out_tokens_per_asmt": 138.74,
+          "usd_per_episode": 0.024717504,
+          "mean_latency_s": 3.344,
+          "usd_per_assessment": 0.0014889792,
+          "P_ci95": 0.008707971740882036,
+          "P_seeds": [
+            0.666,
+            0.664,
+            0.675,
+            0.66,
+            0.676
+          ],
+          "benign_ci95": 0.004919084532715416,
+          "benign_seeds": [
+            0.152,
+            0.152,
+            0.157,
+            0.147,
+            0.156
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.004060937901519785,
+          "fp_seeds": [
+            0.165,
+            0.173,
+            0.169,
+            0.166,
+            0.166
+          ]
         },
         "multi_storm_flat": {
-          "P_mean": 0.8357800000000001,
-          "P_std": 0.0010943491216243684,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.6873600000000001,
+          "P_mean": 0.7046,
+          "P_std": 0.004669047011971505,
+          "benign_mean": 0.2654,
+          "benign_std": 0.0016733200530681526,
+          "blocked_mean": 0.9998,
+          "blocked_std": 0.00044721359549995833,
+          "fp_mean": 0.1482,
+          "fp_std": 0.002774887385102324,
           "errors_total": 0,
-          "in_tokens_mean": 276495.8,
-          "out_tokens_mean": 7555.6,
-          "usd_per_episode": 0.09814982400000001,
-          "mean_latency_s": 3.99,
-          "blocked_std": 0.0637,
-          "benign_std": 0.0
+          "in_tokens_mean": 299605,
+          "out_tokens_mean": 9938.4,
+          "in_tokens_per_asmt": 4104.18,
+          "out_tokens_per_asmt": 136.12,
+          "usd_per_episode": 0.108594752,
+          "mean_latency_s": 3.312,
+          "usd_per_assessment": 0.0014875712,
+          "P_ci95": 0.005796458173747142,
+          "P_seeds": [
+            0.711,
+            0.698,
+            0.706,
+            0.704,
+            0.704
+          ],
+          "benign_ci95": 0.0020773681811368937,
+          "benign_seeds": [
+            0.267,
+            0.263,
+            0.267,
+            0.265,
+            0.265
+          ],
+          "blocked_ci95": 0.0005552000000000004,
+          "blocked_seeds": [
+            0.999,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.003444925404127064,
+          "fp_seeds": [
+            0.151,
+            0.145,
+            0.146,
+            0.148,
+            0.151
+          ]
         }
       }
     },
@@ -149,30 +231,318 @@
       "slug": "openrouter:openai/gpt-4o-mini",
       "scenarios": {
         "single_storm": {
-          "P_mean": 0.8342,
-          "P_std": 0.001559487095169439,
-          "benign_mean": 1.0,
+          "P_mean": 0.6734,
+          "P_std": 0.0029664793948382677,
+          "benign_mean": 0.15259999999999999,
+          "benign_std": 0.0023021728866442696,
           "blocked_mean": 0.0,
-          "errors_total": 3,
-          "in_tokens_mean": 67279.6,
-          "out_tokens_mean": 1446.4,
-          "usd_per_episode": 0.01095978,
-          "mean_latency_s": 2.406,
           "blocked_std": 0.0,
-          "benign_std": 0.0
+          "fp_mean": 0.167,
+          "fp_std": 0.0073824115301166955,
+          "errors_total": 0,
+          "in_tokens_mean": 61634.2,
+          "out_tokens_mean": 1444,
+          "in_tokens_per_asmt": 3278.42,
+          "out_tokens_per_asmt": 76.82000000000001,
+          "usd_per_episode": 0.010111529999999999,
+          "mean_latency_s": 2.3,
+          "usd_per_assessment": 0.0005378550000000001,
+          "P_ci95": 0.0036827801672106386,
+          "P_seeds": [
+            0.67,
+            0.678,
+            0.673,
+            0.672,
+            0.674
+          ],
+          "benign_ci95": 0.0028580669271379934,
+          "benign_seeds": [
+            0.153,
+            0.152,
+            0.154,
+            0.149,
+            0.155
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.00916500509547048,
+          "fp_seeds": [
+            0.173,
+            0.173,
+            0.166,
+            0.168,
+            0.155
+          ]
         },
         "multi_storm_flat": {
-          "P_mean": 0.8359800000000001,
-          "P_std": 0.001074057726567817,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.74542,
-          "errors_total": 2,
-          "in_tokens_mean": 267593.6,
-          "out_tokens_mean": 5576,
-          "usd_per_episode": 0.04348463999999999,
-          "mean_latency_s": 2.392,
-          "blocked_std": 0.0558,
-          "benign_std": 0.0
+          "P_mean": 0.706,
+          "P_std": 0.006557438524302007,
+          "benign_mean": 0.2646,
+          "benign_std": 0.0028809720581775894,
+          "blocked_mean": 0.9998,
+          "blocked_std": 0.00044721359549995833,
+          "fp_mean": 0.1464,
+          "fp_std": 0.011304866208850062,
+          "errors_total": 0,
+          "in_tokens_mean": 263421.6,
+          "out_tokens_mean": 5963.8,
+          "in_tokens_per_asmt": 3276.52,
+          "out_tokens_per_asmt": 74.18,
+          "usd_per_episode": 0.043091519999999994,
+          "mean_latency_s": 2.586,
+          "usd_per_assessment": 0.000535986,
+          "P_ci95": 0.008140830031391155,
+          "P_seeds": [
+            0.71,
+            0.699,
+            0.715,
+            0.701,
+            0.705
+          ],
+          "benign_ci95": 0.0035766258065388972,
+          "benign_seeds": [
+            0.266,
+            0.261,
+            0.267,
+            0.262,
+            0.267
+          ],
+          "blocked_ci95": 0.0005552000000000004,
+          "blocked_seeds": [
+            0.999,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.01403459506220254,
+          "fp_seeds": [
+            0.144,
+            0.147,
+            0.159,
+            0.129,
+            0.153
+          ]
+        }
+      }
+    },
+    "openrouter:openai/gpt-5.4-mini::reasoning=on": {
+      "tier": "mid",
+      "reasoning": "on",
+      "slug": "openrouter:openai/gpt-5.4-mini",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.6656000000000001,
+          "P_std": 0.0039749213828703615,
+          "benign_mean": 0.1498,
+          "benign_std": 0.0035637059362410954,
+          "blocked_mean": 0.0,
+          "blocked_std": 0.0,
+          "fp_mean": 0.146,
+          "fp_std": 0.01854723699099141,
+          "errors_total": 0,
+          "in_tokens_mean": 34869.4,
+          "out_tokens_mean": 5670.8,
+          "in_tokens_per_asmt": 3289.54,
+          "out_tokens_per_asmt": 535.28,
+          "usd_per_episode": 0.051670650000000005,
+          "mean_latency_s": 9.182,
+          "usd_per_assessment": 0.004875914999999999,
+          "P_ci95": 0.004934725540493619,
+          "P_seeds": [
+            0.665,
+            0.671,
+            0.661,
+            0.663,
+            0.668
+          ],
+          "benign_ci95": 0.004424215980261365,
+          "benign_seeds": [
+            0.147,
+            0.148,
+            0.152,
+            0.147,
+            0.155
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.0230257444787351,
+          "fp_seeds": [
+            0.16,
+            0.134,
+            0.164,
+            0.152,
+            0.12
+          ]
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.7008,
+          "P_std": 0.005069516742254635,
+          "benign_mean": 0.26380000000000003,
+          "benign_std": 0.002588435821108959,
+          "blocked_mean": 1.0,
+          "blocked_std": 0.0,
+          "fp_mean": 0.13140000000000002,
+          "fp_std": 0.0032093613071762454,
+          "errors_total": 0,
+          "in_tokens_mean": 156773.2,
+          "out_tokens_mean": 24159,
+          "in_tokens_per_asmt": 3293.58,
+          "out_tokens_per_asmt": 507.58000000000004,
+          "usd_per_episode": 0.22629540000000004,
+          "mean_latency_s": 7.89,
+          "usd_per_assessment": 0.004754295,
+          "P_ci95": 0.006293627303868578,
+          "P_seeds": [
+            0.704,
+            0.694,
+            0.707,
+            0.701,
+            0.698
+          ],
+          "benign_ci95": 0.0032134523242145687,
+          "benign_seeds": [
+            0.265,
+            0.26,
+            0.267,
+            0.264,
+            0.263
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.003984309546207476,
+          "fp_seeds": [
+            0.129,
+            0.128,
+            0.136,
+            0.133,
+            0.131
+          ]
+        }
+      }
+    },
+    "openrouter:openai/gpt-5.4-mini::reasoning=off": {
+      "tier": "mid",
+      "reasoning": "off",
+      "slug": "openrouter:openai/gpt-5.4-mini",
+      "scenarios": {
+        "single_storm": {
+          "P_mean": 0.6688000000000001,
+          "P_std": 0.005118593556827896,
+          "benign_mean": 0.15159999999999998,
+          "benign_std": 0.0035777087639996667,
+          "blocked_mean": 0.0,
+          "blocked_std": 0.0,
+          "fp_mean": 0.1782,
+          "fp_std": 0.007596051605933172,
+          "errors_total": 0,
+          "in_tokens_mean": 55291.8,
+          "out_tokens_mean": 2260,
+          "in_tokens_per_asmt": 3291.16,
+          "out_tokens_per_asmt": 134.52,
+          "usd_per_episode": 0.05163885000000001,
+          "mean_latency_s": 3.192,
+          "usd_per_assessment": 0.00307371,
+          "P_ci95": 0.006354554448582533,
+          "P_seeds": [
+            0.668,
+            0.663,
+            0.667,
+            0.669,
+            0.677
+          ],
+          "benign_ci95": 0.004441600000000003,
+          "benign_seeds": [
+            0.154,
+            0.148,
+            0.152,
+            0.148,
+            0.156
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.009430231759612266,
+          "fp_seeds": [
+            0.184,
+            0.181,
+            0.179,
+            0.182,
+            0.165
+          ]
+        },
+        "multi_storm_flat": {
+          "P_mean": 0.7063999999999999,
+          "P_std": 0.005683308895353133,
+          "benign_mean": 0.2652,
+          "benign_std": 0.004024922359499625,
+          "blocked_mean": 1.0,
+          "blocked_std": 0.0,
+          "fp_mean": 0.1498,
+          "fp_std": 0.003898717737923589,
+          "errors_total": 0,
+          "in_tokens_mean": 248335.2,
+          "out_tokens_mean": 9979,
+          "in_tokens_per_asmt": 3293.58,
+          "out_tokens_per_asmt": 132.35999999999999,
+          "usd_per_episode": 0.23115690000000003,
+          "mean_latency_s": 3.076,
+          "usd_per_assessment": 0.003065805,
+          "P_ci95": 0.007055628743067486,
+          "P_seeds": [
+            0.711,
+            0.698,
+            0.712,
+            0.707,
+            0.704
+          ],
+          "benign_ci95": 0.0049968000000000035,
+          "benign_seeds": [
+            0.265,
+            0.259,
+            0.27,
+            0.265,
+            0.267
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.004840121386907567,
+          "fp_seeds": [
+            0.144,
+            0.148,
+            0.151,
+            0.154,
+            0.152
+          ]
         }
       }
     },
@@ -182,30 +552,104 @@
       "slug": "openrouter:anthropic/claude-haiku-4.5",
       "scenarios": {
         "single_storm": {
-          "P_mean": 0.8337,
-          "P_std": 0.00022803508501980247,
-          "benign_mean": 1.0,
+          "P_mean": 0.6676000000000001,
+          "P_std": 0.006148170459575764,
+          "benign_mean": 0.1518,
+          "benign_std": 0.0017888543819998333,
           "blocked_mean": 0.0,
-          "errors_total": 0,
-          "in_tokens_mean": 93530,
-          "out_tokens_mean": 3023.2,
-          "usd_per_episode": 0.108646,
-          "mean_latency_s": 3.552,
           "blocked_std": 0.0,
-          "benign_std": 0.0
+          "fp_mean": 0.1556,
+          "fp_std": 0.004827007354458872,
+          "errors_total": 0,
+          "in_tokens_mean": 81189.6,
+          "out_tokens_mean": 3028,
+          "in_tokens_per_asmt": 5138.6,
+          "out_tokens_per_asmt": 191.6,
+          "usd_per_episode": 0.0963296,
+          "mean_latency_s": 3.654,
+          "usd_per_assessment": 0.006096600000000001,
+          "P_ci95": 0.007632738077518453,
+          "P_seeds": [
+            0.665,
+            0.658,
+            0.671,
+            0.671,
+            0.673
+          ],
+          "benign_ci95": 0.0022208000000000015,
+          "benign_seeds": [
+            0.152,
+            0.152,
+            0.154,
+            0.149,
+            0.152
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fp_ci95": 0.005992560401030603,
+          "fp_seeds": [
+            0.16,
+            0.152,
+            0.155,
+            0.161,
+            0.15
+          ]
         },
         "multi_storm_flat": {
-          "P_mean": 0.8363,
-          "P_std": 0.0018253766734567449,
-          "benign_mean": 1.0,
-          "blocked_mean": 0.6879,
+          "P_mean": 0.7036,
+          "P_std": 0.005639148871948679,
+          "benign_mean": 0.26480000000000004,
+          "benign_std": 0.002489979919597749,
+          "blocked_mean": 1.0,
+          "blocked_std": 0.0,
+          "fp_mean": 0.144,
+          "fp_std": 0.0058309518948452925,
           "errors_total": 0,
-          "in_tokens_mean": 359159.4,
-          "out_tokens_mean": 11429.4,
-          "usd_per_episode": 0.4163064,
-          "mean_latency_s": 3.452,
-          "blocked_std": 0.0434,
-          "benign_std": 0.0
+          "in_tokens_mean": 360953.6,
+          "out_tokens_mean": 13215.6,
+          "in_tokens_per_asmt": 5141.78,
+          "out_tokens_per_asmt": 188.26,
+          "usd_per_episode": 0.42703159999999996,
+          "mean_latency_s": 3.67,
+          "usd_per_assessment": 0.00608308,
+          "P_ci95": 0.0070008056222123525,
+          "P_seeds": [
+            0.711,
+            0.697,
+            0.706,
+            0.705,
+            0.699
+          ],
+          "benign_ci95": 0.003091222774243231,
+          "benign_seeds": [
+            0.267,
+            0.261,
+            0.267,
+            0.264,
+            0.265
+          ],
+          "blocked_ci95": 0.0,
+          "blocked_seeds": [
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "fp_ci95": 0.007238922350737011,
+          "fp_seeds": [
+            0.149,
+            0.143,
+            0.139,
+            0.151,
+            0.138
+          ]
         }
       }
     }

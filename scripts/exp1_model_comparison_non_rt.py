@@ -21,7 +21,8 @@ import argparse      # parse the --probe / --seeds / --rt-factor CLI flags
 import asyncio        # the sim, MCP server, and judge loop all run as async tasks
 import json           # write the scorecard to experiments/exp1_model_comparison/model_comparison.json
 import logging        # silence uvicorn's shutdown-noise logger at the end
-import statistics     # mean / pstdev of P, tokens, latency across seeds
+import math           # sqrt for the standard error in the confidence interval
+import statistics     # mean / stdev of P, tokens, latency across seeds
 import sys            # sys.path tweak below so 'python -m scripts.…' finds the repo
 import time           # wall-clock timing of runs and the total sweep
 from pathlib import Path  # locate the repo root and the MC prompt file
@@ -75,7 +76,7 @@ _SCENARIOS = {
 }
 
 # All Exp 1 outputs live together under experiments/exp1_model_comparison/: the
-# results (json/png/tex) directly, the run logs in a gitignored logs/ subfolder.
+# results JSON directly, the run logs in a gitignored logs/ subfolder.
 _EXP_DIR  = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison"
 _LOGS_DIR = _EXP_DIR / "logs"
 
@@ -114,6 +115,28 @@ def _prevent_sleep():
         print("[bakeoff] caffeinate held — system won't idle-sleep during this run")
     except (FileNotFoundError, OSError):
         pass
+
+# Student-t 97.5th percentile by SAMPLE SIZE n (df = n-1), for a two-sided 95% CI.
+# With few seeds the interval must use t, not z=1.96 (the sample std is itself an
+# estimate); t -> z as n grows. Fallback 1.96 only kicks in for n>10 (large-sample).
+_T95 = {2: 12.706, 3: 4.303, 4: 3.182, 5: 2.776, 6: 2.571,
+        7: 2.447, 8: 2.365, 9: 2.306, 10: 2.262}
+
+
+def _agg(vals: list[float]) -> tuple[float, float, float]:
+    """(mean, sample-std, 95% CI half-width) for a per-seed metric.
+
+    Sample std (statistics.stdev, /n-1) — NOT population std — so the reported ±std
+    and the CI are consistent. CI half-width = t_{.975,n-1} * std/sqrt(n) (Student-t,
+    since n is small and the std is estimated from the same seeds)."""
+    n = len(vals)
+    mean = statistics.mean(vals)
+    if n < 2:
+        return mean, 0.0, 0.0
+    sd = statistics.stdev(vals)
+    t  = _T95.get(n, 1.96)
+    return mean, sd, t * sd / math.sqrt(n)
+
 
 # calculate money spent
 def _usd(model_str: str, in_tok: float, out_tok: float) -> float:
@@ -372,17 +395,27 @@ async def sweep(args) -> None:
             if not P:
                 continue
             mean_in, mean_out = statistics.mean(in_tok), statistics.mean(out_tok)
-            _sd = lambda v: statistics.pstdev(v) if len(v) > 1 else 0.0   # noqa: E731
+            # mean, SAMPLE std, 95% CI half-width per metric — and keep the raw per-seed
+            # arrays so every aggregate is reproducible/consistent from what's stored.
+            P_m,  P_sd,  P_ci  = _agg(P)
+            b_m,  b_sd,  b_ci  = _agg(benign)
+            bl_m, bl_sd, bl_ci = _agg(blocked)
+            fp_m, fp_sd, fp_ci = _agg(fp)
             per_scn[scenario] = {
-                "P_mean": statistics.mean(P),           "P_std": _sd(P),
-                "benign_mean": statistics.mean(benign), "benign_std": _sd(benign),
-                "blocked_mean": statistics.mean(blocked), "blocked_std": _sd(blocked),
-                "fp_mean": statistics.mean(fp), "fp_std": _sd(fp),   # over-filtering (key on single_storm)
+                "P_mean": P_m,   "P_std": P_sd,   "P_ci95": P_ci,   "P_seeds": P,
+                "benign_mean": b_m,  "benign_std": b_sd,  "benign_ci95": b_ci,  "benign_seeds": benign,
+                "blocked_mean": bl_m, "blocked_std": bl_sd, "blocked_ci95": bl_ci, "blocked_seeds": blocked,
+                # over-filtering (key on single_storm)
+                "fp_mean": fp_m, "fp_std": fp_sd, "fp_ci95": fp_ci, "fp_seeds": fp,
                 "errors_total": sum(errs),
                 "in_tokens_mean": mean_in, "out_tokens_mean": mean_out,            # per-episode totals (mean over seeds)
                 "in_tokens_per_asmt": statistics.mean(in_tok_a),                    # per-assessment (mean over seeds)
                 "out_tokens_per_asmt": statistics.mean(out_tok_a),
                 "usd_per_episode": _usd(slug, mean_in, mean_out),
+                # per-ASSESSMENT cost — the length-invariant cost metric: episodes differ in
+                # duration (single_storm ~130s, multi ~600s) so $/episode isn't comparable
+                # across scenarios, but $/assessment is (fixed window -> ~constant tokens/call).
+                "usd_per_assessment": _usd(slug, statistics.mean(in_tok_a), statistics.mean(out_tok_a)),
                 "mean_latency_s": statistics.mean(lat),
             }
         results[run_id] = {"tier": tier, "reasoning": mode, "slug": slug, "scenarios": per_scn}
@@ -417,14 +450,15 @@ def _print_scorecard(results, scenarios, seeds, elapsed) -> None:
     for scenario in scenarios:
         print(f"\n  --- {scenario} ---")
         print(f"  {'model':40s} {'rsn':>6s} {'P':>12s} {'benign':>7s} {'blocked':>7s} {'fp':>6s} {'err':>4s} "
-              f"{'$/ep':>8s} {'lat_s':>6s}")
+              f"{'m$/asmt':>8s} {'$/ep':>8s} {'lat_s':>6s}")
         rows = [(m, d) for m, d in results.items() if scenario in d["scenarios"]]
         rows.sort(key=lambda md: md[1]["scenarios"][scenario]["P_mean"], reverse=True)
         for _, d in rows:
             s = d["scenarios"][scenario]
+            # m$/asmt = milli-USD per assessment (length-invariant cost); $/ep = per-episode total
             print(f"  {d['slug'].split(':')[-1]:40s} {d['reasoning']:>6s} {s['P_mean']:.3f}±{s['P_std']:.3f} "
                   f"{s['benign_mean']:>7.3f} {s['blocked_mean']:>7.3f} {s['fp_mean']:>6.3f} {s['errors_total']:>4d} "
-                  f"{s['usd_per_episode']:>8.4f} {s['mean_latency_s']:>6.1f}")
+                  f"{s['usd_per_assessment']*1e3:>8.3f} {s['usd_per_episode']:>8.4f} {s['mean_latency_s']:>6.1f}")
     print(f"\n  wall time: {elapsed:.0f}s")
     print("=" * 100)
     print("  Pick: gate out any model with errors > 0; then rank on P, break ties on")

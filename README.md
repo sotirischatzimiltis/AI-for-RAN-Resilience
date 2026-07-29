@@ -74,8 +74,6 @@ scripts/
 ├── run_near_rt.py              bare fast-loop + judge runner (no Orchestrator)
 ├── exp1_model_comparison_non_rt.py   Experiment 1 — LLM storm-judge bake-off
 ├── experiment_phaseA_headline.py    Phase A — Static vs Lyapunov vs Agentic
-├── table_model_comparison.py   builds the Exp 1 LaTeX table
-├── plot_model_comparison.py    builds the Exp 1 figure
 ├── ablation.py                 ablation sweep (forecast / calendar / learning)
 └── gui.py                      live GUI viewer of a running episode
 
