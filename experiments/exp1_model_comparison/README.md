@@ -22,25 +22,25 @@ python -m scripts.exp1_model_comparison_non_rt --seeds 5 --save --log  # full sw
 
 ## Result (5 seeds, bare judge)
 
-| Model | Rsn | P¹ | Benign-FP² | Tok/asmt (in/out)³ | Cost⁴ | Lat (s) |
-|---|---|---|---|---|---|---|
-| **gemini-3.1-flash-lite** | — | 0.709 ± 0.007 | 16.8 ± 0.6% | 3333 / 91 | **0.97** | **2.1** |
-| gpt-5.4-mini | off | 0.706 ± 0.007 | 17.8 ± 0.9% | 3294 / 132 | 3.07 | 3.1 |
-| gpt-4o-mini | — | 0.706 ± 0.008 | 16.7 ± 0.9% | 3277 / 74 | 0.54 | 2.6 |
-| qwen3.7-plus | off | 0.705 ± 0.006 | 16.8 ± 0.4% | 4104 / 136 | 1.49 | 3.3 |
-| claude-haiku-4.5 | — | 0.704 ± 0.007 | 15.6 ± 0.6% | 5142 / 188 | 6.08 | 3.7 |
-| gpt-5.4-mini | on | 0.701 ± 0.006 | 14.6 ± 2.3% | 3294 / 508 | 4.75 | 7.9 |
+| Model | Rsn | P¹ | Tok/asmt (in/out)² | Cost³ | Lat (s) |
+|---|---|---|---|---|---|
+| **gemini-3.1-flash-lite** | — | 0.709 ± 0.007 | 3333 / 91 | **0.97** | **2.1** |
+| gpt-5.4-mini | off | 0.706 ± 0.007 | 3294 / 132 | 3.07 | 3.1 |
+| gpt-4o-mini | — | 0.706 ± 0.008 | 3277 / 74 | 0.54 | 2.6 |
+| qwen3.7-plus | off | 0.705 ± 0.006 | 4104 / 136 | 1.49 | 3.3 |
+| claude-haiku-4.5 | — | 0.704 ± 0.007 | 5142 / 188 | 6.08 | 3.7 |
+| gpt-5.4-mini | on | 0.701 ± 0.006 | 3294 / 508 | 4.75 | 7.9 |
 
-¹ Resilience $P$ on `multi_storm_flat`. ² Benign false-positive (over-filtering) rate on
-the benign-only `single_storm`. ³ Mean input/output tokens per assessment
+¹ Resilience $P$ on `multi_storm_flat`. ² Mean input/output tokens per assessment
 (scenario-independent — the telemetry window is fixed; explains the cost column, e.g.
-gpt-5.4-mini-on's 508 output tokens = the reasoning tax). ⁴ Milli-USD per assessment
+gpt-5.4-mini-on's 508 output tokens = the reasoning tax). ³ Milli-USD per assessment
 (length-invariant; episodes differ in duration, per-assessment cost does not).
 **± = 95% CI (Student-t, n = 5 seeds);** `errors_total = 0` for every model.
 
-Botnet-blocked is **omitted** from the model-selection table: it is ≈100% for every model
-*and* congestion-driven, not a judge property (see Findings), so it carries no discriminating
-signal here. Full per-model blocked rates are in `model_comparison.json`.
+Two behavioural rates are **omitted** from the selection table because they are ≈constant
+across models and so carry no discriminating signal (both live in `model_comparison.json`
+and are discussed under Findings): **botnet-blocked** (≈100% for all, congestion-driven) and
+**benign false-positive / over-filtering** (~15–18% for all, on `single_storm`).
 
 ## Findings
 - **Resilience P is a statistical tie.** All six 95% CIs overlap (~0.70–0.71 on the botnet
@@ -66,7 +66,7 @@ signal here. Full per-model blocked rates are in `model_comparison.json`.
   falls behind the 5 s assessment cadence. Not worth it for this task.
 - **Cost spans ~11×** per assessment (0.54 → 6.08 m\$). `gemini-3.1-flash-lite` gives the
   top P point-estimate, lowest latency, zero errors at 0.97 m\$/asmt; `gpt-4o-mini` is the
-  budget alternative (0.54 m\$/asmt) at a hair more latency. The two are a tie on P/blocked.
+  budget alternative (0.54 m\$/asmt) at a hair more latency. The two are a statistical tie on P.
 - **Provider constraint:** qwen and claude cannot run reasoning *and* our structured
   tool-output together (thinking is incompatible with forced `tool_choice`), so they run
   in default mode.
