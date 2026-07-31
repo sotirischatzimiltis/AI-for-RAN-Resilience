@@ -34,7 +34,7 @@ ASSESSMENT_LIMITS = UsageLimits(request_limit=10, tool_calls_limit=8)
 REQUEST_TIMEOUT_S = 60.0
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts" 
-SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt.md").read_text()
+SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt_agent_system_prompt.md").read_text()
 
 # STRUCTURED OUTPUT PolicyUpdate is the structured output the model must return each assessment.
 # The fast loop reads this to gate the malicious-UE filter and shape its Lyapunov server-count optimisation.
@@ -94,7 +94,7 @@ def compose_system_prompt(
     """Assemble the judge's system prompt ONCE at experiment start (it stays constant
     for the whole run) by filling named {{slots}} in a template.
 
-    The template (a .md file, defaults to non_rt.md) marks WHERE each dynamic piece
+    The template (a .md file, defaults to non_rt_agent_system_prompt.md) marks WHERE each dynamic piece
     goes with a placeholder like {{tools}}:
       • {{tools}}   -> the enabled-tool list (per calendar_enabled / forecast_enabled)
       • {{<name>}}  -> filled from `variables` (e.g. {{scenario}}, {{posture}})

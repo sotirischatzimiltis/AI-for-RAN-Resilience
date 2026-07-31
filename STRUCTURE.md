@@ -15,7 +15,7 @@ Operator (natural-language intent)
    agents/orchestrator.py     (network tier — SMO/rApp)      prompts/orchestrator.md
       │  sets policy / delegates a standing instruction
       ▼
-   agents/non_rt_agent.py     (LLM storm judge, ~seconds)    prompts/non_rt.md
+   agents/non_rt_agent.py     (LLM storm judge, ~seconds)    prompts/non_rt_agent_system_prompt.md
       │  reads MCP tools, writes SharedPolicy
       ▼
    agents/near_rt_control_loop.py   (fast code loop, ~1 Hz — never blocks on the LLM)
@@ -77,10 +77,9 @@ measures only `storm_active` + `malicious_drop_prob`.
 ### `prompts/` — system prompts the LLMs read
 | File | Role |
 |---|---|
-| `non_rt.md` | full judge prompt (used by the full system, phases A–E) |
+| `non_rt_agent_system_prompt.md` | full judge prompt (used by the full system, phases A–E) |
 | `orchestrator.md` | operator-intent prompt |
 | `exp1_model_comparison_non_rt_system_prompt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
-| `prompts_phaseA_non_rt.md` | dedicated **Phase A** judge prompt (detection + filter) |
 
 ### `mcp_server/` — tools the judge can call
 | File | Role |
@@ -108,13 +107,12 @@ measures only `storm_active` + `malicious_drop_prob`.
 **Experiment scripts:**
 | Script | Experiment |
 |---|---|
-| `exp1_model_comparison_non_rt.py` | **Exp 1: LLM bake-off — self-contained** (own bare-judge episode; does not use `run_episode`) |
-| `experiment_phaseA_headline.py` | **Exp A: headline** — Static(c=1/8/16) + Lyapunov vs agentic (gemini); self-contained, same as Exp 1 |
-| `ablation.py` | Exp B: mechanism knockouts (forecast/calendar/release/learning) |
-| `seed_sweep.py` | deterministic baselines across seeds |
-| `agent_sweep.py` | live-agent lift vs baseline |
+| `exp1_model_comparison_non_rt.py` | **Exp 1: LLM model selection — self-contained** (own bare-judge episode; does not use `run_episode`) |
+| `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov vs full agentic (gemini); self-contained |
+| `exp_3_V_W_tuning.py` | **Exp 3: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
+| `ablation.py` | mechanism knockouts (forecast/calendar/release/learning) |
 | `learning_curve.py`, `learning_demo.py` | learning experiments |
-| `compare_baselines.py`, `make_results.py`, `plot_compare.py` | results tables + figures |
+| `plot_vw_tuning.py` | Exp 3 figures (delay-lines / heatmaps / Pareto) |
 
 ## Runtime notes
 - **Interpreter:** use `/Users/admin/miniforge3/envs/pydantic-ai-env/bin/python` (pydantic-ai 1.70). The repo `.venv` has an OLD pydantic-ai that breaks MCP imports.

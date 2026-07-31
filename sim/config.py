@@ -122,6 +122,11 @@ class SimConfig:
     # anticipatory arm that provisions BEFORE the surge beats a reactive one. 0.0 recovers
     # the prior paper's instant-capacity model.
     server_provision_delay_s: float = 5.0
+    # How multiple pending servers spin up. False (default) = SERIAL: one server comes online
+    # per server_provision_delay_s, so c=1 -> c=4 takes 3*delay. True = PARALLEL: all pending
+    # servers boot together, so any jump costs a single delay. Lets us separate the delay's
+    # cost from the serial-spin-up cost.
+    parallel_provision: bool = False
 
     def __post_init__(self): # sanity checks on the config values
         # rho_cap must stay strictly below 1: service time inflates by 1/(1 - rho_c) and
@@ -168,4 +173,81 @@ def multi_storm_flat_traffic(benign=180.0, botnet=60.0, normal=20.0,
     for i in range(1, n_storms + 1):
         phases.append(TrafficPhase(t, t + storm, benign, botnet, f"storm-{i}")); t += storm
         phases.append(TrafficPhase(t, t + gap, normal, 0.0, f"recover-{i}"));    t += gap
+    return TrafficConfig(baseline_rate=normal, phases=phases)
+
+
+def multi_storm_ramp_traffic(peak_benign=180.0, peak_botnet=60.0, normal=20.0,
+                             lead=60.0, ramp=30.0, hold=30.0, gap=120.0,
+                             n_storms=3, ramp_steps=6) -> TrafficConfig:
+    """Like multi_storm_flat, but each storm RAMPS up over `ramp` seconds (a staircase of
+    `ramp_steps` constant sub-phases) before a `hold` plateau, then recovers. The gradual
+    rise gives a linear forecast something to catch — unlike the instant step of
+    multi_storm_flat_traffic — so it exercises anticipatory pre-provisioning. Botnet ramps
+    alongside benign. The elevated span per storm (ramp + hold) defaults to 60s, matching
+    the flat scenario, so the two are directly comparable."""
+    phases = [TrafficPhase(0.0, lead, normal, 0.0, "calm-1")]
+    t = lead
+    step_dt = ramp / ramp_steps
+    for i in range(1, n_storms + 1):
+        for k in range(1, ramp_steps + 1):                 # staircase normal -> peak
+            frac = k / ramp_steps
+            b    = normal + (peak_benign - normal) * frac
+            bot  = peak_botnet * frac
+            phases.append(TrafficPhase(t, t + step_dt, b, bot, f"ramp-{i}.{k}")); t += step_dt
+        phases.append(TrafficPhase(t, t + hold, peak_benign, peak_botnet, f"storm-{i}")); t += hold
+        phases.append(TrafficPhase(t, t + gap, normal, 0.0, f"recover-{i}"));              t += gap
+    return TrafficConfig(baseline_rate=normal, phases=phases)
+
+
+# Storm specs for the mixed scenario: (benign_peak, botnet_peak) in UEs/s (calm baseline 20).
+# Storm-2 is always the BENIGN surge — a stadium egress / mass reconnection — so benign is
+# HIGH (a genuine ~9x spike of real users) with botnet 0; it is the only event on the
+# calendar. Storms 1 and 3 are MALICIOUS: benign stays in the NORMAL range (real users carry
+# on roughly as usual) and a botnet FLOOD drives the surge. The agent sees only the TOTAL
+# arrival rate (benign+botnet), which is high for both kinds, so it cannot separate them on
+# volume alone — it needs the calendar / retry signature. Two intensity profiles:
+#   FLAT — the two botnet storms are equal.
+#   INCREASING — the botnet storms grow (mild then severe), so the agent faces a rising
+#     sequence and must keep scaling its filter and its headroom.
+_MIXED_SPECS_FLAT = [(30.0, 180.0),    # storm-1: malicious (normal benign + botnet flood)
+                     (180.0, 0.0),     # storm-2: BENIGN surge (stadium egress, on the calendar)
+                     (30.0, 180.0)]    # storm-3: malicious
+_MIXED_SPECS_INC  = [(30.0, 120.0),    # storm-1: malicious, mild
+                     (180.0, 0.0),     # storm-2: BENIGN surge (stadium egress, on the calendar)
+                     (30.0, 240.0)]    # storm-3: malicious, severe
+BENIGN_SURGE_IDX = 1                   # storm-2 is the benign surge (0-based)
+
+
+def mixed_storm_traffic(ramped: bool = False, increasing: bool = False, normal: float = 20.0,
+                        storm: float = 60.0, gap: float = 120.0, lead: float = 60.0,
+                        ramp: float = 30.0, ramp_steps: int = 6) -> TrafficConfig:
+    """ONE scenario, THREE storms of mixed nature on a single timeline: two malicious (botnet)
+    storms bracketing one BENIGN surge (no botnet). The benign surge is the only event placed
+    on the operator calendar (runtime.start registers it), so we can watch the agent call
+    get_calendar and pre-provision for it WITHOUT filtering, while it filters the two botnet
+    storms. Two independent axes give four versions:
+      onset — step (ramped=False): each storm jumps instantly to peak, so a telemetry-only
+        forecast is blind and the CALENDAR is the only anticipation signal (for the benign
+        surge); ramp (ramped=True): each storm rises over `ramp`s (a staircase of `ramp_steps`
+        sub-phases) then holds, giving the get_forecast tool a rising trend to catch too.
+      intensity — flat (increasing=False, _MIXED_SPECS_FLAT): equal botnet storms; increasing
+        (increasing=True, _MIXED_SPECS_INC): each botnet storm larger than the last.
+    The elevated span per storm (`storm`s, split ramp+hold when ramped) is identical across the
+    versions so their timelines align and P is comparable."""
+    specs = _MIXED_SPECS_INC if increasing else _MIXED_SPECS_FLAT
+    phases = [TrafficPhase(0.0, lead, normal, 0.0, "calm-1")]
+    t = lead
+    for i, (b_peak, bot_peak) in enumerate(specs, start=1):
+        if ramped:
+            step_dt = ramp / ramp_steps
+            for k in range(1, ramp_steps + 1):            # staircase normal -> peak
+                frac = k / ramp_steps
+                b    = normal + (b_peak - normal) * frac
+                bot  = bot_peak * frac
+                phases.append(TrafficPhase(t, t + step_dt, b, bot, f"ramp-{i}.{k}")); t += step_dt
+            hold = storm - ramp
+            phases.append(TrafficPhase(t, t + hold, b_peak, bot_peak, f"storm-{i}")); t += hold
+        else:
+            phases.append(TrafficPhase(t, t + storm, b_peak, bot_peak, f"storm-{i}")); t += storm
+        phases.append(TrafficPhase(t, t + gap, normal, 0.0, f"recover-{i}")); t += gap
     return TrafficConfig(baseline_rate=normal, phases=phases)

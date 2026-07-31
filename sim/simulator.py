@@ -271,20 +271,23 @@ class StormSim:
                 yield env.timeout(0) # we essential give way to the serve process to start 
 
     def _provisioning_manager(self):
-        """Reconcile c_online toward c_target. Scale-UP is gradual (one server per
-        server_provision_delay_s: image pull/boot/attach of a vDU/vCU); scale-DOWN is
-        immediate — no preemption, a busy server finishes and the dispatcher stops feeding it."""
+        """Reconcile c_online toward c_target. Scale-UP costs server_provision_delay_s
+        (image pull/boot/attach of a vDU/vCU); scale-DOWN is immediate — no preemption, a
+        busy server finishes and the dispatcher stops feeding it. Scale-up is SERIAL by
+        default (one server per delay); with cfg.parallel_provision all pending servers come
+        online together after a single delay."""
         env = self.env # get the simulation environment
         delay = self.cfg.server_provision_delay_s # delay for scaling up servers (time to provision a new server)
         while True:
             if self.c_online > self.c_target: # if the current online server count is greater than the target server count
                 self.c_online = self.c_target # scale down that happends immediately
                 self._signal() # wake the dispatcher to check for available servers and assign waiting attempts if possible
-            if self.c_online < self.c_target: # check if i need to scale up 
-                if delay > 0: # if there is provision delay added 
+            if self.c_online < self.c_target: # check if i need to scale up
+                if delay > 0: # if there is provision delay added
                     yield env.timeout(delay) # wait for the provision delay before adding a new server
                 if self.c_online < self.c_target:  # target may have dropped during warm-up
-                    self.c_online += 1 # increment the online server count (scale up)
+                    # PARALLEL: all pending servers boot together -> jump to target. SERIAL: add one.
+                    self.c_online = self.c_target if self.cfg.parallel_provision else self.c_online + 1
                     self._signal() # wake the dispatcher to check for available servers and assign waiting attempts if possible
                 continue
             yield self._provision_wake # sleep until signaled (wait for a change in the target server count)

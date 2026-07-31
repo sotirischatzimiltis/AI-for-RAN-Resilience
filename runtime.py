@@ -22,9 +22,11 @@ sys.path.insert(0, str(Path(__file__).parent))
 from sim.config import (
     SimConfig, open_ran_arch, RRCConfig,
     single_storm_traffic, multi_storm_traffic, multi_storm_flat_traffic,
+    multi_storm_ramp_traffic, mixed_storm_traffic, BENIGN_SURGE_IDX,
 )
 from sim.simulator import StormSim
 from sim.metrics import UtilityParams
+from shared.event_calendar import ScheduledEvent
 
 # Utility-function parameters, shared by the fast loop (Lyapunov c_star) and the
 # resilience score (get_episode_stats).
@@ -57,16 +59,34 @@ class SimHost:
         t_post:    float | None = None,   # override post-storm duration (single_storm only)
         compute_kappa:   float | None = None,  # shared-compute contention (None = off)
         provision_delay: float = 5.0,          # server warm-up delay (s); matches CFG-1 default. 0 = instant
+        provision_parallel: bool = False,      # False = serial (one server per delay); True = all pending together
     ) -> str:
         if self._thread and self._thread.is_alive():
             return "episode already running — call ignored"
 
+        # Scenario owns the calendar: only the mixed scenarios register an event (below);
+        # every other scenario runs with an empty calendar, so a prior mixed run on this
+        # shared host cannot leak events into a later storm run.
+        self.calendar = []
         if scenario == "multi_storm":
             traffic          = multi_storm_traffic()
             self.t0, self.td = 60.0, 120.0
         elif scenario == "multi_storm_flat":
             traffic          = multi_storm_flat_traffic()
             self.t0, self.td = 60.0, 120.0
+        elif scenario == "multi_storm_ramp":
+            traffic          = multi_storm_ramp_traffic()   # ramped storms (forecast can anticipate)
+            self.t0, self.td = 60.0, 120.0
+        elif scenario in ("mixed_flat_step", "mixed_flat_ramp",
+                          "mixed_inc_step", "mixed_inc_ramp"):
+            # one mixed scenario, four versions over two axes: onset step/ramp (step = calendar
+            # is the only anticipation signal; ramp = forecast can fire too) x intensity
+            # flat/increasing. One calendar event, always on the benign surge (storm-2).
+            traffic          = mixed_storm_traffic(ramped=("ramp" in scenario),
+                                                   increasing=("inc" in scenario))
+            self.t0, self.td = 60.0, 120.0
+            t_surge = traffic.storm_windows()[BENIGN_SURGE_IDX][0]   # start of the benign surge
+            self.calendar = [ScheduledEvent(t_surge, "stadium egress", "high")]
         else:
             kw               = {"t_post": t_post} if t_post is not None else {}
             traffic          = single_storm_traffic(**kw)
@@ -80,6 +100,7 @@ class SimHost:
             realtime=True, rt_factor=rt_factor,
             compute_kappa=compute_kappa,
             server_provision_delay_s=provision_delay,
+            parallel_provision=provision_parallel,
         )
         self.sim = StormSim(cfg)
         self._done.clear()

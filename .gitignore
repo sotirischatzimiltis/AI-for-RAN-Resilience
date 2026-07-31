@@ -20,3 +20,5 @@ results/
 
 # Exp 1 run logs (large; regenerable) — keep the json/png/tex, drop the logs
 experiments/exp1_model_comparison/logs/
+experiments/exp3_vw_tuning/logs/
+experiments/exp2_system_comparison/logs/
