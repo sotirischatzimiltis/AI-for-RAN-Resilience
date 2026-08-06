@@ -5,6 +5,17 @@ from runtime import UP, host as sim_host        # shared utility params + the pr
 from sim.controllers import lyapunov_optimal_c  # the pure drift-plus-penalty c* search
 from shared.policy import SharedPolicy, RunStats  # judge<->loop blackboard + per-episode counters
 
+
+def ramp_time(reserve: int, cfg) -> float:
+    """Seconds needed to bring `reserve` servers online from a cold cell, given the sim's
+    provisioning model. Parallel: all pending spin up together, so ~one delay regardless of
+    count. Serial: one server per delay, so (reserve-1) delays. Used to start pre-provisioning
+    just early enough that the reserve is online BY the event — never earlier."""
+    delay = cfg.server_provision_delay_s
+    if getattr(cfg, "parallel_provision", False):
+        return delay
+    return max(0, reserve - 1) * delay
+
 def apply_decision( # apply the Non-RT judge's policy to the sim, clamping against guardrails
     sim,
     storm_active:         bool,
@@ -96,6 +107,20 @@ async def run_control_loop(
             if memory is not None and memory.learn_within:
                 memory.observe(s.lam_current, pol.storm_active)
 
+            # Pre-provisioning reserve applied ON SCHEDULE: only from (event_time - ramp_time)
+            # onward, so the servers are online BY the event without going up too early (a botnet
+            # in the pre-event window is still filtered — capacity isn't raised for it). event_time
+            # <= 0 means "no schedule" (rule/operator path) -> apply the reserve immediately.
+            ramp = ramp_time(pol.reserve_servers, sim.cfg)
+            reserve_due = pol.event_time <= 0.0 or s.t >= (pol.event_time - ramp - poll_interval)
+            # Stand the reserve down on our own once the surge has PASSED: past the event time and
+            # load back near the calm baseline. Telemetry-detected, so the judge never has to time
+            # the drop (and adjusting V never clears the plan). Only for a scheduled event (>0).
+            baseline   = getattr(sim.cfg.traffic, "baseline_rate", 20.0)
+            surge_over = pol.event_time > 0.0 and s.t > pol.event_time and s.lam_current <= baseline * 3
+            eff_reserve = pol.reserve_servers if (reserve_due and not surge_over) else 1
+            eff_min     = max(pol.min_servers, eff_reserve)   # operator SLA floor + scheduled reserve
+
             applied_c, applied_drop, acted = apply_decision(   # clamp + actuate the two levers
                 sim,
                 pol.storm_active,
@@ -104,7 +129,7 @@ async def run_control_loop(
                 pol.queue_hold_threshold,
                 current_lam=s.lam_current,
                 memory=memory,
-                min_servers=pol.min_servers,
+                min_servers=eff_min,
             )
 
             # --- per-tick console trace (observability only) ---
@@ -114,7 +139,9 @@ async def run_control_loop(
             print(
                 f"[Fast] {marker} step={step:3d}  t={s.t:5.1f}s  "
                 f"lam={s.lam_current:5.0f}  q={s.queue_len:4d}  "
-                f"c={applied_c:2d} (c*={c_star:2d})  drop={applied_drop:.2f}  "
+                # c = commanded (jumps at once); online = actually booted (ramps behind it at the
+                # provisioning delay). They diverge during warm-up — that gap IS the delay working.
+                f"c={applied_c:2d}(c*={c_star:2d}) online={s.c_online:2d}  drop={applied_drop:.2f}  "
                 f"storm={pol.storm_active}  acted={acted}{tag}"
             )
         # sleep to the next tick, but wake early if the episode ends

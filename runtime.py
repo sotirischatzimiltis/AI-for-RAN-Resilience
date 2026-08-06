@@ -21,17 +21,36 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sim.config import (
     SimConfig, open_ran_arch, RRCConfig,
-    single_storm_traffic, multi_storm_traffic, multi_storm_flat_traffic,
-    multi_storm_ramp_traffic, mixed_storm_traffic, BENIGN_SURGE_IDX,
+    single_storm_traffic, multi_storm_flat_traffic,
+    multi_storm_ramp_traffic, mixed_storm_traffic, botnet_event_traffic, BENIGN_SURGE_IDX,
 )
 from sim.simulator import StormSim
 from sim.metrics import UtilityParams
 from shared.event_calendar import ScheduledEvent
+from shared.events import EXP1_EVENT
 
 # Utility-function parameters, shared by the fast loop (Lyapunov c_star) and the
 # resilience score (get_episode_stats).
 LQMAX = 1500.0
 UP    = UtilityParams(lq_max=LQMAX, kB=0.004)
+
+_MIXED_SCENARIOS = ("mixed_flat_step", "mixed_flat_ramp", "mixed_inc_step", "mixed_inc_ramp")
+LLM_COMPARE = "llm_compare"          # exp_1: one botnet storm + one real-event benign surge
+
+
+def scenario_calendar(scenario: str, traffic) -> list:
+    """The operator calendar for a scenario — the single source of truth shared by
+    runtime.start (agentic/LLM path) and the experiments (deterministic path). The mixed
+    scenarios put a coarse 'stadium egress' on the benign surge; llm_compare puts the RICH
+    EXP1_EVENT (venue + sold-out, no attendance) on its event surge so the judge must reason
+    the crowd; every other scenario is empty."""
+    if scenario == LLM_COMPARE:
+        t_event = traffic.storm_windows()[1][0]                 # start of storm-2 (the event surge)
+        return [ScheduledEvent(t_event, EXP1_EVENT.name, "high", EXP1_EVENT.venue, EXP1_EVENT.sold_out)]
+    if scenario in _MIXED_SCENARIOS:
+        t_surge = traffic.storm_windows()[BENIGN_SURGE_IDX][0]   # start of the benign surge
+        return [ScheduledEvent(t_surge, "stadium egress", "high")]
+    return []
 
 
 class SimHost:
@@ -44,6 +63,10 @@ class SimHost:
         self.t0: float = 50.0   # storm onset  (single_storm default)
         self.td: float = 110.0  # storm end    (single_storm default)
         self.calendar: list = []  # scheduled load events (read by the get_calendar MCP tool)
+        # t_start of events the judge has ALREADY provisioned a reserve for this episode. get_calendar
+        # annotates these "reserve committed — do not re-estimate" so the judge acts on each event ONCE,
+        # while the event stays visible (so its surge is still classified benign). Reset every episode.
+        self.calendar_committed: set = set()
         # Ablation gates for the anticipation MCP tools. When False the tool still
         # exists (the agent can call it) but returns a "disabled" payload, so the
         # agent gets no forecast / calendar signal — a clean information ablation.
@@ -66,27 +89,30 @@ class SimHost:
 
         # Scenario owns the calendar: only the mixed scenarios register an event (below);
         # every other scenario runs with an empty calendar, so a prior mixed run on this
-        # shared host cannot leak events into a later storm run.
+        # shared host cannot leak events into a later storm run. Committed-marks reset too, so a
+        # prior episode's "already provisioned" flags never carry over — the calendar is pristine.
         self.calendar = []
-        if scenario == "multi_storm":
-            traffic          = multi_storm_traffic()
+        self.calendar_committed = set()
+        if scenario == LLM_COMPARE:
+            # exp_1: botnet storm (forecast) + real-event benign surge (calendar). The surge is
+            # sized to EXP1_EVENT's true attendance, so the judge's crowd estimate drives QoS.
+            traffic          = botnet_event_traffic(EXP1_EVENT.surge_peak())
             self.t0, self.td = 60.0, 120.0
+            self.calendar    = scenario_calendar(scenario, traffic)
         elif scenario == "multi_storm_flat":
             traffic          = multi_storm_flat_traffic()
             self.t0, self.td = 60.0, 120.0
         elif scenario == "multi_storm_ramp":
             traffic          = multi_storm_ramp_traffic()   # ramped storms (forecast can anticipate)
             self.t0, self.td = 60.0, 120.0
-        elif scenario in ("mixed_flat_step", "mixed_flat_ramp",
-                          "mixed_inc_step", "mixed_inc_ramp"):
+        elif scenario in _MIXED_SCENARIOS:
             # one mixed scenario, four versions over two axes: onset step/ramp (step = calendar
             # is the only anticipation signal; ramp = forecast can fire too) x intensity
             # flat/increasing. One calendar event, always on the benign surge (storm-2).
             traffic          = mixed_storm_traffic(ramped=("ramp" in scenario),
                                                    increasing=("inc" in scenario))
             self.t0, self.td = 60.0, 120.0
-            t_surge = traffic.storm_windows()[BENIGN_SURGE_IDX][0]   # start of the benign surge
-            self.calendar = [ScheduledEvent(t_surge, "stadium egress", "high")]
+            self.calendar    = scenario_calendar(scenario, traffic)
         else:
             kw               = {"t_post": t_post} if t_post is not None else {}
             traffic          = single_storm_traffic(**kw)
@@ -112,6 +138,17 @@ class SimHost:
             f"c_max={c_max} rt_factor={rt_factor} "
             f"horizon={horizon:.0f}s (~{horizon/rt_factor:.0f}s wall-clock)"
         )
+
+    def mark_event_committed(self, event_time: float, tol: float = 30.0) -> None:
+        """Flag the scheduled event nearest `event_time` as already provisioned. get_calendar then
+        annotates it 'reserve committed — do not re-estimate', so the judge acts on the event ONCE
+        instead of re-estimating the crowd every cycle. The event stays VISIBLE (not removed), so
+        its surge is still classified benign and the filter stays off. Idempotent; reset by start()."""
+        if not self.calendar:
+            return
+        match = min(self.calendar, key=lambda e: abs(e.t_start - event_time))
+        if abs(match.t_start - event_time) <= tol:
+            self.calendar_committed.add(round(match.t_start, 1))
 
     def _run(self):
         # the fast control loop actuates the sim directly (in-process)

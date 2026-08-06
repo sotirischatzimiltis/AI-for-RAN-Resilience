@@ -23,6 +23,9 @@ from pydantic_ai.usage import UsageLimits
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
 from shared.policy import SharedPolicy, RunStats
+from shared.verdict import Verdict
+from shared.events import reserve_for          # crowd -> reserve floor (the sim owns this math)
+from sim.metrics import resting_lam
 
 MCP_URL = f"http://{MCP_HOST}:{MCP_PORT}/mcp"
 
@@ -32,6 +35,9 @@ ASSESSMENT_LIMITS = UsageLimits(request_limit=10, tool_calls_limit=8)
 
 # The model's per-request timeout (provider-native) — the LLM call may take longer than this if it calls tools, but the LLM itself must return within this cap.
 REQUEST_TIMEOUT_S = 60.0
+# Pinned sampling: greedy decoding so repeated-seed variance measures the MODEL's judgement,
+# not decoding noise (the rule arm is fully deterministic, so the comparison must be too).
+TEMPERATURE = 0.0
 
 _PROMPTS_DIR = Path(__file__).parent.parent / "prompts" 
 SYSTEM_PROMPT = (_PROMPTS_DIR / "non_rt_agent_system_prompt.md").read_text()
@@ -56,9 +62,39 @@ class PolicyUpdate(BaseModel):
     lyapunov_W:           float = Field(ge=0.0, le=20.0, default=1.0,
                                         description="Lyapunov server-cost weight (nominal 1). Higher favours cost -> "
                                                     "provision FEWER servers. Applied only when tighten=True")
+    attendance_reasoning: str   = Field(default="",
+                                        description="If get_calendar names an event, think HERE before you give a number: "
+                                                    "which event is it, who is playing or performing and how big a draw are "
+                                                    "they, and how large is the venue. Empty when no event is scheduled.")
+    expected_attendance:  int   = Field(ge=0, le=200000, default=0,
+                                        description="Your estimate of how many PEOPLE will attend the scheduled event, "
+                                                    "following from attendance_reasoning above. The system turns this crowd "
+                                                    "into the pre-provisioning reserve. 0 when no event.")
+    event_time:           float = Field(ge=0.0, default=0.0,
+                                        description="The time (in seconds, from get_calendar) the event's surge is expected. "
+                                                    "The system provisions the reserve just in time for it. Set it once with "
+                                                    "the estimate; 0 when no event.")
     tighten:              bool  = Field(description="True only if the slow tuning knobs (queue_hold_threshold, "
-                                                    "lyapunov_V, lyapunov_W) should be applied")
+                                                    "lyapunov_V, lyapunov_W, and the event reserve/time) should be applied")
     reasoning:            str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
+
+
+def policyupdate_to_verdict(pu: PolicyUpdate, telemetry, source: str = "agent") -> Verdict:
+    """Map the LLM's PolicyUpdate onto the shared Verdict record so its decision lines up,
+    field-for-field, with the rule controller's Verdict (agreement = a join). Evidence fields
+    it doesn't compute (severity/elevated/...) stay at their defaults; latest/resting lam are
+    filled from telemetry for context."""
+    s  = telemetry[-1] if telemetry else None
+    mu = sim_host.sim.mu_single if sim_host.sim else 28.7
+    reserve = reserve_for(pu.expected_attendance, mu) if pu.expected_attendance else 1  # crowd -> floor
+    return Verdict(
+        t=(s.t if s else 0.0), source=source,
+        storm_active=pu.storm_active, malicious_drop_prob=pu.malicious_drop_prob,
+        lyapunov_V=pu.lyapunov_V, reserve_servers=reserve, tighten=pu.tighten,
+        latest_lam=(s.lam_current if s else 0.0),
+        resting_lam=(resting_lam(telemetry) if telemetry else 0.0),
+        reasoning=pu.reasoning,
+    )
 
 # Which read tools are live this episode — a SYSTEM-prompt fact (a capability), not
 # per-cycle evidence. get_episode_stats is always on; the anticipation tools are
@@ -72,8 +108,8 @@ def _tool_availability_text(calendar_enabled: bool = True, forecast_enabled: boo
     ]
     if calendar_enabled:
         tools.append(
-            "get_calendar — KNOWN scheduled load events near now "
-            "(e.g. a stadium egress, a planned mass registration)."
+            "get_calendar — KNOWN scheduled events near now, each named with its venue and "
+            "whether it sold out (e.g. a match or concert whose let-out will spike attach load)."
         )
     if forecast_enabled:
         tools.append(
@@ -125,20 +161,7 @@ def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
         system_prompt=system_prompt or SYSTEM_PROMPT,
     )
 
-def _resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> float:
-    """Estimate the cell's calm baseline lam — the reference the judge measures a
-    storm against. Returns the lowest arrival-rate bin the cell actually dwells in
-    (sparse transition bins ignored), so it stays valid even when the current window
-    is entirely inside a storm."""
-    from collections import Counter
-    lams = [s.lam_current for s in telemetry]
-    if not lams:
-        return 0.0
-    binned = Counter(round(l / bin_size) * bin_size for l in lams)   # snap each lam to a bin, count occupancy
-    floor  = max(1.0, min_frac * max(binned.values()))              # ignore sparse bins (< min_frac of the busiest)
-    return float(min(b for b, c in binned.items() if c >= floor))    # lowest bin the cell actually dwells in = resting level
-
-# PART OF THE USER PROMPT  
+# PART OF THE USER PROMPT
 def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
     """
     Summarise the last ~window_s of telemetry as TRENDS so the model can tell a
@@ -190,7 +213,7 @@ def summarize_window(telemetry, window_s: float = 40.0, n_bins: int = 8) -> str:
 
     # Resting baseline from the FULL history so far (not just the window), so the judge
     # has a rest reference even when the current window is entirely inside a storm.
-    baseline = _resting_lam(telemetry)
+    baseline = resting_lam(telemetry)
 
     # Data-only summary: values + compact tags. The reasoning rules (LATEST lam drives
     # the verdict, resting = rest reference, LEADING/LAGGING semantics) live in the system prompt.
@@ -232,7 +255,9 @@ async def _do_assessment(
     assessment: int, # what number this assessment is
     stats:      RunStats | None,  # LLM meter to fold this call into (tokens/latency/errors); None = skip bookkeeping
     window_s:   float = 40.0,         # how many seconds of telemetry the summary covers
-) -> None:
+    shadow=None,                      # optional ShadowRunner: run the rule on the SAME telemetry (no actuation)
+    model_settings: dict | None = None,  # per-call LLM settings; None -> pinned default (timeout + temp=0)
+) -> "PolicyUpdate | None":           # the verdict (None on error); loop callers ignore it
     t0     = time.monotonic()                        # start of the WHOLE assessment (for asmt-latency stat)
     # turn the raw telemetry into the trend summary the model reasons over (never raw samples)
     window = summarize_window(sim_host.sim.telemetry, window_s=window_s) if sim_host.sim else "No sim running."
@@ -250,28 +275,87 @@ async def _do_assessment(
     )
     try:
         t_llm   = time.monotonic() # 
-        result  = await agent.run(                 # call the LLM 
+        # Pinned default keeps every existing caller (run.py, orchestrator, exp_2) reproducible;
+        # a caller sweeping models (Exp 1) passes its own settings — e.g. provider-default
+        # temperature + a reasoning budget for models that reject an explicit temperature.
+        result  = await agent.run(                 # call the LLM
             user_prompt, usage_limits=ASSESSMENT_LIMITS,
-            model_settings={"timeout": REQUEST_TIMEOUT_S},  # provider-native per-request cap
+            model_settings=model_settings or {"timeout": REQUEST_TIMEOUT_S,   # provider-native per-request cap
+                                              "temperature": TEMPERATURE},    # greedy decoding (pinned sampling)
         )
         elapsed = time.monotonic() - t_llm     # pure LLM call time (incl. tool round-trips)
         verdict = result.output                # the validated PolicyUpdate — the judge's decision
         if stats:
             _accumulate_usage(stats, result, elapsed)
+        # crowd -> reserve: the LLM reasons about the CROWD, the system sizes the floor (reserve_for).
+        mu  = sim_host.sim.mu_single if sim_host.sim else 28.7
+        cmx = sim_host.sim.cfg.c_max if sim_host.sim else 16
+        # Touch the event plan ONLY when the judge gives a real estimate. attendance=0 (e.g. while
+        # it just lowers V after a storm) must NOT clear the reserve — otherwise adjusting V wipes
+        # the committed plan. So when there's no estimate we send reserve/event_time = None (leave
+        # them). The policy LOCKS the plan on first commit (ignoring re-estimates), and the fast
+        # loop stands the reserve down on its own once the surge has passed.
+        if verdict.expected_attendance > 0:
+            reserve      = reserve_for(verdict.expected_attendance, mu, cmx)
+            reserve_arg  = reserve
+            event_arg    = verdict.event_time
+            if stats and verdict.expected_attendance > stats.judge_peak_attendance:   # exp_1 scoring
+                stats.judge_peak_attendance = verdict.expected_attendance
+                stats.judge_peak_reserve    = reserve
+        else:
+            reserve_arg = event_arg = None       # no estimate -> don't touch the reserve plan
         policy.update(                         # publish the verdict to the blackboard the fast loop reads
             storm_active=verdict.storm_active,
             malicious_drop_prob=verdict.malicious_drop_prob,
             queue_hold_threshold=verdict.queue_hold_threshold,
             lyapunov_V=verdict.lyapunov_V,
             lyapunov_W=verdict.lyapunov_W,
+            reserve_servers=reserve_arg,
+            event_time=event_arg,
             tighten=verdict.tighten,
         )
+        # Once the policy holds a committed reserve for a scheduled event, mark that event on the
+        # calendar as provisioned so the next get_calendar tells the judge "do not re-estimate" — it
+        # acts on each event ONCE. The event stays visible, so its surge is still judged benign.
+        if policy.event_time > 0.0 and policy.reserve_servers > 1 and sim_host.sim is not None:
+            sim_host.mark_event_committed(policy.event_time)
         tuned = f"  tighten(V={verdict.lyapunov_V:.0f})" if verdict.tighten else ""
+        # show the EFFECTIVE plan the policy actually HOLDS (after the lock), not the raw proposal,
+        # so a re-estimate that the lock ignored is visible as "held" staying put.
+        crowd = (f"  est~{verdict.expected_attendance}->held {policy.reserve_servers}@t={policy.event_time:.0f}s"
+                 if (verdict.expected_attendance or policy.reserve_servers > 1) else "")
+        why   = verdict.attendance_reasoning if verdict.expected_attendance else verdict.reasoning
         print(
             f"[Non-RT]  assessment={assessment}  storm={verdict.storm_active}  "
-            f"drop={verdict.malicious_drop_prob:.2f}{tuned}  "
-            f"({elapsed:.1f}s)  {verdict.reasoning}"
+            f"drop={verdict.malicious_drop_prob:.2f}{tuned}{crowd}  "
+            f"({elapsed:.1f}s)  {why}"
         )
+        # Persist HOW the judge reasoned this cycle: the telemetry window it saw (its evidence),
+        # its articulated reasoning, the raw decision, and the plan the policy actually HELD after
+        # the lock. Lets us replay each LLM's thinking per assessment, not just the episode score.
+        if stats is not None:
+            t_now = sim_host.sim.telemetry[-1].t if (sim_host.sim and sim_host.sim.telemetry) else 0.0
+            stats.traces.append({
+                "assessment":          assessment,
+                "t":                   round(t_now, 1),         # sim time of this decision
+                "latency_s":           round(elapsed, 2),
+                "window":              window,                  # the trend summary it reasoned over
+                "storm_active":        verdict.storm_active,
+                "malicious_drop_prob": verdict.malicious_drop_prob,
+                "tighten":             verdict.tighten,
+                "lyapunov_V":          verdict.lyapunov_V,
+                "lyapunov_W":          verdict.lyapunov_W,
+                "expected_attendance": verdict.expected_attendance,
+                "event_time":          verdict.event_time,
+                "attendance_reasoning": verdict.attendance_reasoning,
+                "reasoning":           verdict.reasoning,
+                "held_reserve":        policy.reserve_servers,  # effective plan after the lock
+                "held_event_time":     policy.event_time,
+            })
+        if shadow is not None and sim_host.sim is not None:   # run the rule on the SAME telemetry
+            shadow.observe(sim_host.sim,                       # (records the pair; never actuates)
+                           policyupdate_to_verdict(verdict, sim_host.sim.telemetry))
+        return verdict                          # hand the verdict back (callers may ignore it)
     except Exception as e:
         # includes request timeouts and, for agent/MCP runs, exceptions wrapped in a
         # TaskGroup/ExceptionGroup — unwrap those (recursively) to surface the real cause
@@ -294,9 +378,11 @@ async def run_assessment_loop(
     agent:      Agent, # pass the agent created
     policy:     SharedPolicy, # pass the shared policy object to write in
     stop_event: asyncio.Event, # the notifier when the episode ends 
-    interval:   float = 10.0, # seconds between assessments 
-    stats:      RunStats | None = None, # if i will save the run stats for logging 
-    window_s:   float = 40.0, # how much telemtry each assessment sees. 
+    interval:   float = 10.0, # seconds between assessments
+    stats:      RunStats | None = None, # if i will save the run stats for logging
+    window_s:   float = 40.0, # how much telemtry each assessment sees.
+    shadow=None,              # optional ShadowRunner: score the rule against the agent each cycle
+    model_settings: dict | None = None,  # per-call LLM settings forwarded to each assessment (None -> pinned default)
 ) -> None:
     """
     Autonomous Non-RT assessment loop. Sleeps `interval` between assessments,
@@ -318,11 +404,12 @@ async def run_assessment_loop(
         assessment += 1
         if stats:
             stats.non_rt_assessments += 1
-        await _do_assessment(agent, policy, assessment, stats, window_s=window_s)
+        await _do_assessment(agent, policy, assessment, stats, window_s=window_s, shadow=shadow,
+                             model_settings=model_settings)
 
     # Always run ONE final assessment after the episode ends (captures the recovery state)
     assessment += 1
     if stats:
         stats.non_rt_assessments += 1
     print(f"[Non-RT]  Episode complete — running final assessment #{assessment}.")
-    await _do_assessment(agent, policy, assessment, stats, window_s=window_s)
+    await _do_assessment(agent, policy, assessment, stats, window_s=window_s, shadow=shadow)

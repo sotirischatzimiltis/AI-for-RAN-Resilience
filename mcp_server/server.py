@@ -75,7 +75,10 @@ def get_calendar() -> dict:
     if not host.calendar_enabled:  # ablation guard (also hidden by middleware)
         return {"disabled": "calendar unavailable at this site (ablation)"}
     t_now = host.sim.telemetry[-1].t if (host.sim and host.sim.telemetry) else 0.0 # current time
-    return {"t_now": round(t_now, 1), "calendar": summarize_calendar(host.calendar, t_now)} # return calendar summary 
+    # committed = events already provisioned this episode; summarize_calendar marks them so the
+    # judge acts on each event once (stops re-estimating) while it stays visible for benign classification.
+    return {"t_now": round(t_now, 1),
+            "calendar": summarize_calendar(host.calendar, t_now, committed=host.calendar_committed)}
 
 
 @mcp.tool()

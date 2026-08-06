@@ -17,7 +17,7 @@ Flags:
                           Prefix with 'ollama:'     for local Ollama models.
                           Prefix with 'openrouter:' for OpenRouter models.
                           Use 'test' for a fast deterministic stub (no LLM needed).
-    --scenario            single_storm | multi_storm  (default: single_storm)
+    --scenario            single_storm | multi_storm_flat | multi_storm_ramp  (default: single_storm)
     --seed                RNG seed (default: 3)
     --c-max               max servers (default: 16)
     --rt-factor           speed multiplier: simulated seconds per wall-clock second
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pydantic AI agentic resilience run")
     parser.add_argument("--model",               default="ollama:llama3.2")
     parser.add_argument("--scenario",            default="single_storm",
-                        choices=["single_storm", "multi_storm", "multi_storm_flat"])
+                        choices=["single_storm", "multi_storm_flat", "multi_storm_ramp"])
     parser.add_argument("--seed",                type=int,   default=3)
     parser.add_argument("--c-max",               type=int,   default=16,   dest="c_max")
     parser.add_argument("--rt-factor",           type=float, default=1.0,  dest="rt_factor")

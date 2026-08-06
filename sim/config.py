@@ -88,6 +88,50 @@ class TrafficConfig:
                 windows.append((p.t_start, p.t_end))
         return windows
 
+def event_surge_traffic(surge_rate: float, normal: float = 20.0,
+                        lead: float = 30.0, surge_dur: float = 60.0, post: float = 90.0) -> TrafficConfig:
+    """One scheduled BENIGN surge (a stadium egress / concert let-out) for the reserve-sizing
+    experiment: calm -> a `surge_rate` plateau -> recover, no botnet. `surge_rate` is the event's
+    peak signaling load (max of the calm baseline and the crowd's contribution, so a tiny event
+    is just baseline = a non-event). Each portfolio event is simulated as one of these, sized by
+    its ground-truth attendance, to score whether the chosen reserve served it."""
+    surge_rate = max(normal, surge_rate)
+    return TrafficConfig(baseline_rate=normal, phases=[
+        TrafficPhase(0.0, lead, normal, 0.0, "calm"),
+        TrafficPhase(lead, lead + surge_dur, surge_rate, 0.0, "surge"),
+        TrafficPhase(lead + surge_dur, lead + surge_dur + post, normal, 0.0, "recover"),
+    ])
+
+
+def botnet_event_traffic(event_surge: float, normal: float = 20.0, benign_during_botnet: float = 30.0,
+                         botnet_peak: float = 250.0, lead: float = 60.0, ramp: float = 30.0,
+                         hold: float = 30.0, gap: float = 120.0, ramp_steps: int = 6) -> TrafficConfig:
+    """The exp_1 (LLM-judge comparison) scenario: TWO storms of opposite nature so the judge
+    must use BOTH anticipation tools and reason, not pattern-match on volume.
+      STORM-1 MALICIOUS botnet, RAMP onset — benign users carry on at `benign_during_botnet`
+        while a botnet floods to `botnet_peak` over `ramp`s (a staircase) then holds. The rising,
+        UNSCHEDULED climb is what get_forecast catches -> the judge should filter + add headroom.
+      STORM-2 BENIGN event, STEP onset — pure real users at `event_surge` UEs/s (sized to a real
+        event's attendance/300), no botnet, jumping instantly to peak. A step overruns a reactive
+        loop, so the ONLY way to serve it is to PRE-provision from get_calendar — which means the
+        judge must estimate the crowd behind the named event and size the reserve. No filtering.
+    `botnet_peak` is set so the botnet TOTAL (benign+botnet) is comparable to the event surge, so
+    the judge cannot separate malicious from benign on arrival volume alone."""
+    phases = [TrafficPhase(0.0, lead, normal, 0.0, "calm-1")]
+    t = lead
+    step_dt = ramp / ramp_steps
+    for k in range(1, ramp_steps + 1):                       # botnet staircase 0 -> peak
+        frac = k / ramp_steps
+        phases.append(TrafficPhase(t, t + step_dt, benign_during_botnet, botnet_peak * frac,
+                                   f"botnet-ramp.{k}")); t += step_dt
+    phases.append(TrafficPhase(t, t + hold, benign_during_botnet, botnet_peak, "botnet-storm")); t += hold
+    phases.append(TrafficPhase(t, t + gap, normal, 0.0, "recover-1")); t += gap
+    # STORM-2: benign event surge, STEP onset (instant to peak), no botnet, same elevated span.
+    phases.append(TrafficPhase(t, t + ramp + hold, max(normal, event_surge), 0.0, "event-surge"))
+    t += ramp + hold
+    phases.append(TrafficPhase(t, t + gap, normal, 0.0, "recover-2")); t += gap
+    return TrafficConfig(baseline_rate=normal, phases=phases)
+
 # ----------------------------- Top-level sim config --------------------------
 @dataclass
 class SimConfig:
@@ -152,17 +196,6 @@ def single_storm_traffic(normal=20.0, storm=200.0,
         TrafficPhase(t_pre + t_storm, t_pre + t_storm + t_post, normal, 0.0, "recovery"),
     ])
 
-def multi_storm_traffic() -> TrafficConfig:
-    # Three storms of growing intensity with a malicious component.
-    return TrafficConfig(baseline_rate=20.0, phases=[
-        TrafficPhase(0,    60,   20,  0,  "calm-1"),
-        TrafficPhase(60,   120,  120, 40, "storm-1"),
-        TrafficPhase(120,  420,  20,  0,  "recover-1"),
-        TrafficPhase(420,  480,  180, 60, "storm-2"),
-        TrafficPhase(480,  780,  20,  0,  "recover-2"),
-        TrafficPhase(780,  840,  220, 80, "storm-3"),
-        TrafficPhase(840, 1100,  20,  0,  "recover-3"),
-    ])
 
 def multi_storm_flat_traffic(benign=180.0, botnet=60.0, normal=20.0,
                              lead=60.0, storm=60.0, gap=120.0,

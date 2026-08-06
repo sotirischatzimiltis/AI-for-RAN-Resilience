@@ -39,7 +39,7 @@ from shared.event_calendar import ScheduledEvent
 from scripts.run import resolve_model
 
 # scenario -> sim time of the first storm onset (for the pre-provisioning calendar event)
-_SCENARIO_ONSET = {"single_storm": 50.0, "multi_storm": 60.0, "multi_storm_flat": 60.0}
+_SCENARIO_ONSET = {"single_storm": 50.0, "multi_storm_flat": 60.0}
 
 # Each config is a set of run_episode kwargs layered on the shared base. 'full' is
 # the reference; every other row disables exactly one mechanism. learn_within is on
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Ablation sweep — marginal value of each mechanism")
     p.add_argument("--model", default="openrouter:openai/gpt-4o-mini")
     p.add_argument("--scenario", default="multi_storm_flat",
-                   choices=["single_storm", "multi_storm", "multi_storm_flat"])
+                   choices=["single_storm", "multi_storm_flat", "multi_storm_ramp"])
     p.add_argument("--seeds", type=int, default=5)
     p.add_argument("--rt-factor", type=float, default=4.0, dest="rt_factor")
     p.add_argument("--assessment-interval", type=float, default=6.0, dest="assessment_interval")

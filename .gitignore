@@ -22,3 +22,14 @@ results/
 experiments/exp1_model_comparison/logs/
 experiments/exp3_vw_tuning/logs/
 experiments/exp2_system_comparison/logs/
+
+# Exp 1 (LLM judge selection): keep only the README and the final results JSON.
+# Logs, per-episode reasoning/util traces, and intermediate runs are large and regenerable.
+experiments/exp1_llm_judges/*
+!experiments/exp1_llm_judges/README.md
+!experiments/exp1_llm_judges/llm_judges_rho_serial.json
+
+# Other experiment outputs + local analysis plots — kept local for now
+experiments/exp2_system_comparison/
+experiments/exp4_reserve_sizing/
+utility_plots/

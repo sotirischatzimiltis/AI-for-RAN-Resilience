@@ -1,11 +1,15 @@
 """
 Experiment 2 — system comparison: does the full agentic controller beat non-AI baselines?
 
-Compares five controllers on the SAME scenarios/seeds:
+Compares six controllers on the SAME scenarios/seeds:
   • Static (c=1)   — fixed minimal capacity, no LLM
   • Static (c=8)   — fixed mid capacity, no LLM
   • Static (c=16)  — fixed full capacity (= c_max), no LLM
   • Lyapunov       — dynamic drift-plus-penalty capacity, no LLM, no filter
+  • Deterministic (rules) — the FULL system minus the LLM: the agentic decision tree from
+                     the judge prompt hardcoded as rules (RuleBasedController), over the same
+                     Lyapunov capacity + malicious filter + calendar/forecast anticipation.
+                     Isolates what the LLM adds over hardcoding its own instructions.
   • Agentic        — the FULL system: gemini storm judge + malicious filter +
                      anticipation tools (forecast + calendar) enabled. Learning OFF
                      (Experiment C) and operator intents OFF (Experiment E).
@@ -52,10 +56,11 @@ from sim.config import (SimConfig, open_ran_arch, RRCConfig,
                         single_storm_traffic, mixed_storm_traffic)
 from sim.simulator import StormSim
 from sim.controllers import FixedController, LyapunovController
+from agents.rule_based_controller import RuleBasedController, ShadowRunner
 from sim.metrics import (resilience_multi, benign_success_rate,
                         malicious_blocked_rate, malicious_filtered_rate, avg_servers,
                         resilience_efficiency)
-from runtime import UP, host as sim_host
+from runtime import UP, host as sim_host, scenario_calendar
 
 AGENT_MODEL = "openrouter:google/gemini-3.1-flash-lite"   # winner of Experiment 1
 # ONE mixed scenario (two botnet storms bracketing one benign surge), in four versions over
@@ -117,7 +122,35 @@ def run_baseline(factory, c0, scenario, seed, parallel) -> dict:
             "llm_lat": 0.0, "asmt_lat": 0.0}
 
 
-async def run_agentic(model, scenario, seed, args) -> dict:
+RULE_LABEL = "Deterministic (rules)"
+
+
+def run_rule_based(scenario, seed, args) -> dict:
+    """The FULL system minus the LLM: the agentic decision tree encoded as deterministic
+    rules (RuleBasedController), over the SAME Lyapunov capacity + malicious filter +
+    calendar/forecast anticipation. Runs in virtual time (no LLM, no MCP), so it is fast.
+    Isolates what the LLM adds over hardcoding its own prompt. Honours --serial and
+    --no-anticipation exactly like the agentic arm."""
+    antic   = not args.no_anticipation
+    traffic = _traffic(scenario)
+    cfg = SimConfig(arch=open_ran_arch(), rrc=RRCConfig(t300_ms=1000, max_attempts=5),
+                    c0=2, c_max=16, traffic=traffic, seed=seed,
+                    parallel_provision=not args.serial)
+    cal  = scenario_calendar(scenario, traffic) if antic else []
+    ctrl = RuleBasedController(calendar=cal, anticipation=antic,
+                               assessment_interval=args.assessment_interval, util_p=UP)
+    sim = StormSim(cfg)
+    sim.run(controller=ctrl)
+    storms = sim.cfg.traffic.storm_windows()
+    P   = resilience_multi(sim.telemetry, sim.mu_single, UP, storms)["P_episode"]
+    srv = avg_servers(sim.telemetry)
+    return {"P": round(P, 4), "benign": benign_success_rate(sim.stats),
+            "filtered": malicious_filtered_rate(sim.stats), "blocked": malicious_blocked_rate(sim.stats),
+            "servers": srv, "eff": resilience_efficiency(P, srv, 16),
+            "llm_lat": 0.0, "asmt_lat": 0.0}
+
+
+async def run_agentic(model, scenario, seed, args, model_settings=None) -> dict:
     """One self-contained agentic episode — Experiment 1's structure (no Orchestrator): the
     gemini storm judge over the deterministic fast loop, with the FULL system enabled. On:
     Lyapunov capacity, the judge's storm_active / drop filter, and (unless --no-anticipation)
@@ -139,6 +172,15 @@ async def run_agentic(model, scenario, seed, args) -> dict:
                    t_post=(20.0 if scenario == "single_storm" else None),
                    provision_parallel=not args.serial)   # headline = parallel (best); --serial for the ablation
 
+    # SHADOW: the deterministic rule, configured exactly like this site (same calendar +
+    # anticipation), scored against the agent each assessment WITHOUT actuating.
+    shadow = None
+    if args.shadow:
+        rule = RuleBasedController(calendar=scenario_calendar(scenario, _traffic(scenario)),
+                                   anticipation=antic, assessment_interval=args.assessment_interval,
+                                   util_p=UP)
+        shadow = ShadowRunner(rule)
+
     stop_event = asyncio.Event()
 
     async def _watch():
@@ -150,7 +192,7 @@ async def run_agentic(model, scenario, seed, args) -> dict:
         _watch(),
         run_control_loop(policy, stop_event, 1.0, stats, memory=None),
         run_assessment_loop(non_rt, policy, stop_event, args.assessment_interval, stats,
-                            window_s=args.window_s),
+                            window_s=args.window_s, shadow=shadow, model_settings=model_settings),
     )
 
     sim = sim_host.sim
@@ -163,12 +205,18 @@ async def run_agentic(model, scenario, seed, args) -> dict:
     st  = sim.stats
     srv = avg_servers(sim.telemetry)
     n   = max(1, stats.non_rt_assessments)
-    return {"P": round(final_P, 4), "benign": benign_success_rate(st),
-            "filtered": malicious_filtered_rate(st), "blocked": malicious_blocked_rate(st),
-            "servers": srv,
-            "eff": resilience_efficiency(final_P, srv, 16),   # resilience per unit capacity (read next to P)
-            "llm_lat": round(stats.llm_latency_s / n, 3),
-            "asmt_lat": round(stats.assessment_latency_s / n, 3)}
+    out = {"P": round(final_P, 4), "benign": benign_success_rate(st),
+           "filtered": malicious_filtered_rate(st), "blocked": malicious_blocked_rate(st),
+           "servers": srv,
+           "eff": resilience_efficiency(final_P, srv, 16),   # resilience per unit capacity (read next to P)
+           "llm_lat": round(stats.llm_latency_s / n, 3),
+           "asmt_lat": round(stats.assessment_latency_s / n, 3),
+           # token totals for the model sweep (Exp 1) to price each judge; ignored by _agg's _KEYS.
+           "in_tok": stats.llm_input_tokens, "out_tok": stats.llm_output_tokens,
+           "errors": stats.non_rt_errors}
+    if shadow is not None:
+        out["shadow"] = shadow.agreement()   # rule-vs-agent agreement over this episode
+    return out
 
 
 def _agg(rows: list[dict]) -> dict:
@@ -202,10 +250,21 @@ async def sweep(args):
                   f"benign={r['benign_mean']:.3f} filtered={r['filtered_mean']:.3f} "
                   f"servers={r['servers_mean']:.1f}")
 
+    # --- deterministic rules (fast, virtual time, no LLM): the agentic decision tree hardcoded ---
+    results[RULE_LABEL] = {}
+    for scn in scenarios:
+        rows = [run_rule_based(scn, s, args) for s in seeds]
+        results[RULE_LABEL][scn] = _agg(rows)
+        r = results[RULE_LABEL][scn]
+        print(f"[sys] {RULE_LABEL:16s} {scn:16s}  P={r['P_mean']:.3f} "
+              f"benign={r['benign_mean']:.3f} filtered={r['filtered_mean']:.3f} "
+              f"servers={r['servers_mean']:.1f}")
+
     # --- agentic (slow, real-time, LLM) ---
     model = resolve_model(AGENT_MODEL)
     label = "Agentic (gemini)" if not args.no_anticipation else "Agentic (no-antic)"
     results[label] = {}
+    shadow_rows: dict[str, list] = {}          # per-scenario rule-vs-agent agreement records
     for scn in scenarios:
         rows = []
         for s in seeds:
@@ -215,6 +274,8 @@ async def sweep(args):
                 print(f"[sys] agentic {scn} seed={s} ERROR {type(e).__name__}: {e}")
                 continue
             rows.append(r)
+            if "shadow" in r:
+                shadow_rows.setdefault(scn, []).append(r["shadow"])
             print(f"[sys] {label:18s} {scn:16s} seed={s}  P={r['P']:.3f} benign={r['benign']:.3f} "
                   f"filtered={r['filtered']:.3f} servers={r['servers']:.1f} "
                   f"llm={r['llm_lat']:.1f}s asmt={r['asmt_lat']:.1f}s")
@@ -222,18 +283,54 @@ async def sweep(args):
             results[label][scn] = _agg(rows)
 
     _print_table(results, scenarios, seeds, label)
+    shadow_summary = _shadow_summary(shadow_rows) if shadow_rows else None
+    if shadow_summary:
+        _print_shadow(shadow_summary)
     if args.save:
         out = _EXP_DIR / "system_comparison.json"
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"seeds": seeds, "scenarios": scenarios,
-                                   "agent_model": AGENT_MODEL, "anticipation": not args.no_anticipation,
-                                   "provisioning": "serial" if args.serial else "parallel",
-                                   "systems": results}, indent=2))
+        payload = {"seeds": seeds, "scenarios": scenarios,
+                   "agent_model": AGENT_MODEL, "anticipation": not args.no_anticipation,
+                   "provisioning": "serial" if args.serial else "parallel",
+                   "systems": results}
+        if shadow_summary:
+            payload["shadow_agreement"] = shadow_summary
+        out.write_text(json.dumps(payload, indent=2))
         print(f"\n  saved -> {out}")
 
 
+def _shadow_summary(shadow_rows: dict[str, list]) -> dict:
+    """Mean rule-vs-agent agreement per scenario (over seeds) + a pooled overall."""
+    def _mean(vals):
+        return round(sum(vals) / len(vals), 3) if vals else 0.0
+    out, all_rows = {}, []
+    for scn, recs in shadow_rows.items():
+        all_rows += recs
+        out[scn] = {"assessments": sum(r["n"] for r in recs),
+                    "storm_agree":  _mean([r["storm_agree"]  for r in recs]),
+                    "filter_agree": _mean([r["filter_agree"] for r in recs]),
+                    "full_agree":   _mean([r["full_agree"]   for r in recs])}
+    out["overall"] = {"assessments": sum(r["n"] for r in all_rows),
+                      "storm_agree":  _mean([r["storm_agree"]  for r in all_rows]),
+                      "filter_agree": _mean([r["filter_agree"] for r in all_rows]),
+                      "full_agree":   _mean([r["full_agree"]   for r in all_rows])}
+    return out
+
+
+def _print_shadow(summary: dict):
+    print("\n" + "=" * 72)
+    print("SHADOW: rule-vs-agent agreement (rule run on the agent's telemetry, no actuation)")
+    print("  storm = same storm call; filter = same filter on/off; full = both")
+    print("=" * 72)
+    print(f"  {'scenario':18s} {'assessments':>12s} {'storm':>8s} {'filter':>8s} {'full':>8s}")
+    for scn, a in summary.items():
+        print(f"  {scn:18s} {a['assessments']:>12d} {a['storm_agree']:>8.2f} "
+              f"{a['filter_agree']:>8.2f} {a['full_agree']:>8.2f}")
+    print("=" * 72)
+
+
 def _print_table(results, scenarios, seeds, agent_label):
-    order = [b[0] for b in BASELINES] + [agent_label]
+    order = [b[0] for b in BASELINES] + [RULE_LABEL, agent_label]
     print("\n" + "=" * 112)
     print(f"SYSTEM COMPARISON  ({len(seeds)} seeds)   P / benign / botnet-filtered / avg-servers / efficiency / latency (mean ± 95% CI)")
     print("  botnet-filtered = deliberate filter drops (only the agentic system filters);")
@@ -244,12 +341,12 @@ def _print_table(results, scenarios, seeds, agent_label):
     print("=" * 112)
     for scn in scenarios:
         print(f"\n  --- {scn} ---")
-        print(f"  {'system':18s} {'P':>15s} {'benign':>15s} {'filtered':>15s} {'servers':>12s} {'eff':>6s} {'llm_lat':>8s}")
+        print(f"  {'system':21s} {'P':>15s} {'benign':>15s} {'filtered':>15s} {'servers':>12s} {'eff':>6s} {'llm_lat':>8s}")
         for label in order:
             s = results.get(label, {}).get(scn)
             if not s:
                 continue
-            print(f"  {label:18s} {s['P_mean']:.3f}±{s['P_ci95']:.3f}  "
+            print(f"  {label:21s} {s['P_mean']:.3f}±{s['P_ci95']:.3f}  "
                   f"{s['benign_mean']:.3f}±{s['benign_ci95']:.3f}  "
                   f"{s['filtered_mean']:.3f}±{s['filtered_ci95']:.3f}  "
                   f"{s['servers_mean']:>5.1f}±{s['servers_ci95']:.1f}  "
@@ -273,6 +370,9 @@ if __name__ == "__main__":
     p.add_argument("--serial", action="store_true",
                    help="serial provisioning (one server per delay). Default is PARALLEL "
                         "(best-case; all pending servers spin up at once) for the headline result.")
+    p.add_argument("--shadow", action="store_true",
+                   help="run the deterministic rule in SHADOW on the agent's telemetry each "
+                        "assessment (no actuation) and report rule-vs-agent agreement.")
     p.add_argument("--save", action="store_true",
                    help="cache to experiments/exp2_system_comparison/system_comparison.json")
     p.add_argument("--log", nargs="?", const="AUTO", default=None,

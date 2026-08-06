@@ -40,6 +40,8 @@ class TelemetrySample:
     arrivals: int = 0          # cumulative attach attempts submitted (incl. retries)
     malicious_arrivals: int = 0  # cumulative botnet UEs spawned
     malicious_dropped: int = 0   # cumulative botnet UEs dropped at admission
+    benign_arrivals:   int = 0   # cumulative benign UEs spawned (for per-window benign-served rate)
+    benign_completed:  int = 0   # cumulative benign UEs that attached
 
 @dataclass
 class Stats:
@@ -336,6 +338,8 @@ class StormSim:
                 arrivals=self.stats.arrivals,
                 malicious_arrivals=self.stats.malicious_arrivals,
                 malicious_dropped=self.stats.malicious_dropped,
+                benign_arrivals=self.stats.benign_arrivals,
+                benign_completed=self.stats.benign_completed,
             ))
             yield env.timeout(cfg.telemetry_dt_s) # wait for the telemetry interval before taking the next sample 
 

@@ -1,8 +1,22 @@
 from __future__ import annotations
 import math
+from collections import Counter
 from dataclasses import dataclass
 from typing import List, Sequence
 from .simulator import TelemetrySample
+
+def resting_lam(telemetry, bin_size: float = 10.0, min_frac: float = 0.05) -> float:
+    """The cell's calm-baseline arrival rate — the reference a storm is judged against.
+    Returns the lowest arrival-rate bin the cell actually dwells in (sparse transition bins
+    ignored), so it stays valid even when the whole window is inside a storm. SINGLE source of
+    truth, imported by both the LLM judge (non_rt_agent) and the deterministic rule controller
+    so the two can never drift apart."""
+    lams = [s.lam_current for s in telemetry]
+    if not lams:
+        return 0.0
+    binned = Counter(round(l / bin_size) * bin_size for l in lams)  # snap each lam to a bin, count occupancy
+    floor  = max(1.0, min_frac * max(binned.values()))             # ignore sparse (<min_frac of busiest) bins
+    return float(min(b for b, c in binned.items() if c >= floor))   # lowest bin the cell dwells in = rest
 
 def benign_success_rate(stats) -> float:
     # Fraction of LEGITIMATE users that eventually attached. Includes, completed, failed and dropped at admission.
@@ -38,6 +52,32 @@ def per_storm_blocked(telemetry, storms) -> list[float]:
         d = counter_value_at(td, "malicious_dropped") - counter_value_at(t0, "malicious_dropped")
         a = counter_value_at(td, "malicious_arrivals") - counter_value_at(t0, "malicious_arrivals")
         out.append(round(d / a, 4) if a > 0 else 0.0)   # blocked fraction for this storm
+    return out
+
+
+def _counter_at(telemetry, t, field):
+    """Cumulative counter value at time t (last sample at/before t); 0 before the first sample."""
+    val = 0
+    for s in telemetry:
+        if s.t <= t:
+            val = getattr(s, field, 0)
+        else:
+            break
+    return val
+
+
+def per_storm_benign_served(telemetry, storms) -> list[float]:
+    """Fraction of benign UEs that ATTACHED during each storm window, from the cumulative
+    benign counters in telemetry: (completed[td]-completed[t0]) / (arrivals[td]-arrivals[t0]).
+    Reported per experiment so the blended episode benign-served can be split by window (e.g. a
+    model that serves the botnet window fully but starves the event surge). Minor boundary effect:
+    a UE arriving near td may complete just after it (attach lag), same approximation as
+    per_storm_blocked. A window with no benign arrivals returns 1.0 (nothing to serve)."""
+    out = []
+    for (t0, td) in storms:
+        c = _counter_at(telemetry, td, "benign_completed") - _counter_at(telemetry, t0, "benign_completed")
+        a = _counter_at(telemetry, td, "benign_arrivals")  - _counter_at(telemetry, t0, "benign_arrivals")
+        out.append(round(c / a, 4) if a > 0 else 1.0)
     return out
 
 def malicious_blocked_rate(stats) -> float:
@@ -135,14 +175,17 @@ def malicious_filtered_rate(stats) -> float:
 
 @dataclass
 class UtilityParams:
-    # Defaults match runtime.UP (the operative scoring params), so a bare
-    # UtilityParams() is no longer the old degenerate lq_max=7000 footgun — the
-    # controller's utility (LyapunovController) and the resilience score now agree.
+    # Defaults match runtime.UP (the operative params), so a bare UtilityParams() agrees with the
+    # deployed config — the controller's utility (LyapunovController) and the resilience score share
+    # ONE utility (they must, else the system is judged against a yardstick it did not optimise for).
+    # uA is UTILISATION-based: uA = 1/(1+exp(kA*(rho - mfracA))), rho = lam/(c*mu). Because rho already
+    # normalises load by capacity, the steepness kA is c-INDEPENDENT (the old lam-based form had an
+    # effective steepness kA*c*mu that turned into a cliff at high c).
     wA: float = 0.5
     wB: float = 0.5
-    kA: float = 0.5            # steepness on arrival-rate term
+    kA: float = 10.0           # uA steepness in UTILISATION space (kappa); c-independent
     kB: float = 0.004          # steepness on queue-length term (matches UP)
-    mfracA: float = 0.75       # midpoint fraction of c*mu
+    mfracA: float = 0.90       # utilisation KNEE: uA = 0.5 at rho = mfracA (rho = lam/(c*mu))
     lq_max: float = 1500.0     # queue scale (matches UP); mB = 750 is reachable
     mfracB: float = 0.5        # midpoint fraction of lq_max
 
@@ -158,13 +201,28 @@ def _clamp_exp(x: float) -> float:
     # above ~709). Clamping to +/-700 saturates the logistic to 0/1 as intended.
     return max(-700.0, min(700.0, x))
 
+# the two utility components BEFORE weighting — exposed so reporting can decompose u without
+# changing it. uA = capacity-margin term (UTILISATION vs the knee); uB = queue-health term.
+def utility_parts(sample: TelemetrySample, mu_single: float, p: UtilityParams) -> tuple[float, float]:
+    """(uA, uB) for one sample. utility() == p.wA*uA + p.wB*uB. A low uA with a high uB means the
+    load was SERVED (queue short) but at high utilisation (little headroom) — thin margin, not
+    starvation; that is the split that explains why a well-served surge can still score u<1.
+
+    uA is UTILISATION-based: rho = lam/(c*mu) is the fraction of serving capacity in use, and
+    uA = 1/(1+exp(kA*(rho - mfracA))) falls from ~1 (ample headroom) through 0.5 (at the knee
+    rho=mfracA) to ~0 (saturated/overloaded). kA is the steepness in rho-space, so uA means the
+    same thing at every capacity c (unlike the old lam-based form, whose sharpness scaled with c)."""
+    cap = sample.c_online * mu_single                       # total serving capacity (servers * per-server rate)
+    rho = (sample.lam_current / cap) if cap > 0 else float("inf")   # utilisation = offered load / capacity
+    uA = 1.0 / (1.0 + math.exp(_clamp_exp(p.kA * (rho - p.mfracA))))
+    mB = p.lq_max * p.mfracB
+    uB = 1.0 / (1.0 + math.exp(_clamp_exp(p.kB * (sample.queue_len - mB))))
+    return uA, uB
+
 # method to calculate utility of a single telemetry sample, given the single-server service rate and utility parameters
 def utility(sample: TelemetrySample, mu_single: float, p: UtilityParams) -> float:
     """u(t) in [0,1]; higher = more stable/resilient"""
-    mA = sample.c_online * mu_single * p.mfracA
-    uA = 1.0 / (1.0 + math.exp(_clamp_exp(p.kA * (sample.lam_current - mA))))
-    mB = p.lq_max * p.mfracB
-    uB = 1.0 / (1.0 + math.exp(_clamp_exp(p.kB * (sample.queue_len - mB))))
+    uA, uB = utility_parts(sample, mu_single, p)
     return p.wA * uA + p.wB * uB
 
 # compute the utility time series for a sequence of telemetry samples
@@ -301,11 +359,30 @@ def resilience_multi(telemetry: Sequence[TelemetrySample],
 
     per = []                                 # one result dict per storm
     for k, (t0, td) in enumerate(storms):    # storms = [(start, end), ...] from storm_windows()
-        # LOCAL baseline: mean utility over the 50s of calm just BEFORE this storm.
-        # Scoring each storm against its own recent-normal (not the global start) means
-        # storm 2 is judged fresh, not penalised for storm 1's leftover degradation.
-        pre = [u for t, u in zip(ts, us) if t0 - baseline_lookback_s <= t < t0]
-        u_des = (sum(pre) / len(pre)) if pre else None   # None -> resilience_score auto-calibrates
+        # LOCAL baseline: mean utility over the calm just BEFORE this storm, measured at the cell's
+        # REST capacity — NOT while a scheduled reserve is pre-provisioning. A serial reserve ramp
+        # lands in [t0-lookback, t0] (servers spin up AHEAD of the event), driving c_online far above
+        # what the resting load needs; utilisation rho = lam/(c*mu) collapses and utility is
+        # transiently inflated, which would set an UNREACHABLE recovery bar (the cell returns to its
+        # true rest utility, below 0.95*inflated-baseline, so recovery is never confirmed). So average
+        # only the calm samples that are NOT over-provisioned (rho at/above a rest floor). Walk back a
+        # little further than the nominal lookback in case the ramp fills the whole window; fall back
+        # to the plain window mean if no rest sample is found. Scoring each storm against its own
+        # recent rest-normal (not the global start) still means storm 2 is judged fresh.
+        rho_rest_floor = 0.5                              # rest rho ~0.7; any pre-provisioned c gives rho<0.4
+        max_lookback   = baseline_lookback_s + 60.0       # reach past a serial ramp that fills the window
+        rest = [(s.t, u) for s, u in zip(telemetry, us)
+                if t0 - max_lookback <= s.t < t0
+                and s.c_online * mu_single > 0
+                and s.lam_current / (s.c_online * mu_single) >= rho_rest_floor]
+        recent = [u for t, u in rest if t >= t0 - baseline_lookback_s]   # prefer rest within the nominal window
+        if recent:
+            u_des = sum(recent) / len(recent)
+        elif rest:
+            u_des = sum(u for _, u in rest) / len(rest)                  # ramp filled the window -> older rest
+        else:
+            pre   = [u for t, u in zip(ts, us) if t0 - baseline_lookback_s <= t < t0]
+            u_des = (sum(pre) / len(pre)) if pre else None               # no rest at all -> plain mean / auto
         # MET-4: cap this storm's recovery scan at the NEXT storm's onset (inf for the last).
         t_next = storms[k + 1][0] if k + 1 < len(storms) else float("inf")
         # score this one storm with its own u_des, reusing the single-window scorer
@@ -318,6 +395,96 @@ def resilience_multi(telemetry: Sequence[TelemetrySample],
     # whole-episode score = plain mean of the per-storm P (every storm weighted equally)
     p_episode = sum(s["P"] for s in per) / len(per) if per else 0.0
     return {"P_episode": p_episode, "per_storm": per, "n_storms": len(per)}
+
+
+def utility_decomposition(telemetry: Sequence[TelemetrySample],
+                          mu_single: float,
+                          util_p: UtilityParams,
+                          storms: Sequence[tuple[float, float]]) -> list[dict]:
+    """Per-storm-window breakdown of the resilience utility — DIAGNOSTIC only, does not change P.
+    For each (t0, td) reports the mean capacity-margin term uA, the mean queue-health term uB, and
+    the mean utilisation rho = lam/(c_online*mu). Reading it: a window with low uA + high uB + rho
+    near 1 was SERVED (queue short) but ran with little headroom, so its absorption (hence P) is
+    limited by MARGIN, not by users failing — the context that keeps a P<1 from being misread as
+    starvation. Windows with no samples report the neutral (1, 1, 0)."""
+    out = []
+    for (t0, td) in storms:
+        seg = [s for s in telemetry if t0 <= s.t <= td]
+        if not seg:
+            out.append({"t0": t0, "td": td, "uA": 1.0, "uB": 1.0, "rho": 0.0})
+            continue
+        uAs, uBs, rhos = [], [], []
+        for s in seg:
+            uA, uB = utility_parts(s, mu_single, util_p)
+            uAs.append(uA); uBs.append(uB)
+            cap = s.c_online * mu_single
+            rhos.append(s.lam_current / cap if cap > 0 else 0.0)
+        n = len(seg)
+        out.append({"t0": t0, "td": td,
+                    "uA": sum(uAs) / n, "uB": sum(uBs) / n, "rho": sum(rhos) / n})
+    return out
+
+def recovery_report(telemetry: Sequence[TelemetrySample],
+                    mu_single: float,
+                    util_p: UtilityParams,
+                    storms: Sequence[tuple[float, float]],
+                    baseline_lookback_s: float = 50.0,
+                    recovery_frac: float = 0.95,
+                    hold_window: float = 30.0) -> list[dict]:
+    """DIAGNOSTIC: reproduce the recovery detector from resilience_score EXACTLY, but return its
+    internals per storm window so a 'not recovered' verdict can be checked against the logs instead
+    of trusted blind. For each (t0, td) reports:
+      u_des        : the local pre-storm baseline it compares to (mean u over [t0-lookback, t0])
+      target       : recovery_frac * u_des (the 0.95 line u must cross AND hold 30s)
+      recovered    : did u cross target and hold for hold_window before the scan end?
+      tr           : recovery time if recovered, else the censoring scan_end
+      post_peak_u  : the BEST utility reached after the storm (if < target, it literally never
+                     climbed back to the baseline — baseline likely inflated or backlog draining)
+      post_peak_t  : when that peak occurred
+      frac_above   : fraction of post-storm samples already at/above target (how close it was)
+      calm_u_end   : mean u over the last 20s (where the system actually settled)
+    Read-only; does not touch P."""
+    ts = [s.t for s in telemetry]
+    us = utility_series(telemetry, mu_single, util_p)
+    out = []
+    for k, (t0, td) in enumerate(storms):
+        # baseline at REST, skipping the pre-provisioning ramp — identical rule to resilience_multi
+        # so this diagnostic reports the SAME u_des the score uses (see resilience_multi for the why).
+        rest = [(s.t, u) for s, u in zip(telemetry, us)
+                if t0 - (baseline_lookback_s + 60.0) <= s.t < t0
+                and s.c_online * mu_single > 0
+                and s.lam_current / (s.c_online * mu_single) >= 0.5]
+        recent = [u for t, u in rest if t >= t0 - baseline_lookback_s]
+        if recent:
+            u_des = sum(recent) / len(recent)
+        elif rest:
+            u_des = sum(u for _, u in rest) / len(rest)
+        else:
+            pre   = [u for t, u in zip(ts, us) if t0 - baseline_lookback_s <= t < t0]
+            u_des = (sum(pre) / len(pre)) if pre else 1.0
+        target = recovery_frac * u_des
+        t_next = storms[k + 1][0] if k + 1 < len(storms) else float("inf")
+        scan_end = min(t_next, ts[-1])
+        tr = None
+        for i, t in enumerate(ts):
+            if td <= t <= scan_end and us[i] >= target:
+                w_hi = min(t + hold_window, scan_end)
+                held = [u for tt, u in zip(ts, us) if t <= tt <= w_hi]
+                if held and min(held) >= target:
+                    tr = t
+                    break
+        post = [(t, u) for t, u in zip(ts, us) if td <= t <= scan_end]
+        peak_t, peak_u = max(post, key=lambda x: x[1]) if post else (td, 0.0)
+        frac  = (sum(1 for _, u in post if u >= target) / len(post)) if post else 0.0
+        tail  = [u for t, u in zip(ts, us) if t >= ts[-1] - 20.0]
+        calm_u_end = (sum(tail) / len(tail)) if tail else 0.0
+        out.append({"window_t0": t0, "window_td": td, "u_des": round(u_des, 4),
+                    "target": round(target, 4), "recovered": tr is not None,
+                    "tr": round(tr if tr is not None else scan_end, 1),
+                    "post_peak_u": round(peak_u, 4), "post_peak_t": round(peak_t, 1),
+                    "frac_above": round(frac, 3), "calm_u_end": round(calm_u_end, 4)})
+    return out
+
 
 def live_absorption(telemetry: Sequence[TelemetrySample],
                     mu_single: float,

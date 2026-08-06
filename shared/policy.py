@@ -25,6 +25,8 @@ class PolicyView:
     lyapunov_V:           float   # EFFECTIVE utility weight (operator override, else judge's)
     lyapunov_W:           float   # EFFECTIVE cost weight (operator override, else judge's)
     min_servers:          int     # operator SLA capacity floor (default 1)
+    reserve_servers:      int     # pre-provision floor the judge sized for a scheduled event
+    event_time:           float   # sim-time the event surge hits (0 = apply reserve immediately)
     last_updated:         float   # monotonic timestamp of the last write (for staleness/context)
 
 
@@ -52,6 +54,14 @@ class SharedPolicy:
     queue_hold_threshold: int   = 10
     lyapunov_V:          float = 1.0    # normalised O(1) scale (was 1000); nominal load-tracking
     lyapunov_W:          float = 1.0
+    # Pre-provisioning floor: servers to hold online AHEAD of a surge, regardless of current
+    # load. Raising lyapunov_V does nothing until load arrives (the loop sizes to what it sees),
+    # so this is the lever that actually pre-provisions a scheduled/forecast surge. 1 = none.
+    reserve_servers:     int   = 1
+    # When the event surge is expected (sim seconds). The fast loop applies `reserve_servers`
+    # only from (event_time - ramp_time) onward, so servers are online BY the event without
+    # pre-provisioning too early. 0 = no schedule -> apply the reserve immediately (rule/operator).
+    event_time:          float = 0.0
 
     # Operator overrides, set by a routed intent via set_operator(). When present
     # they OUTRANK the Non-RT judge's autonomous tuning (an operator command wins).
@@ -106,6 +116,8 @@ class SharedPolicy:
         queue_hold_threshold: int | None = None,
         lyapunov_V:           float | None = None,
         lyapunov_W:           float | None = None,
+        reserve_servers:      int | None = None,
+        event_time:           float | None = None,
         tighten:              bool = False,
     ) -> None:
         """
@@ -126,6 +138,19 @@ class SharedPolicy:
                     self.lyapunov_V = max(0.0, float(lyapunov_V))
                 if lyapunov_W is not None:
                     self.lyapunov_W = max(0.0, float(lyapunov_W))
+                # Event plan (reserve + its time): commit ONCE, then LOCK it so per-cycle
+                # re-estimates can't jitter or corrupt it. A stand-down (reserve -> 1) always
+                # applies and clears the lock; a fresh schedule (none active yet) applies; a
+                # re-estimate while a plan is active is ignored. event_time=0 (rule/operator)
+                # is never locked, so their immediate reserve behaves exactly as before.
+                if reserve_servers is not None or event_time is not None:
+                    new_reserve = max(1, int(reserve_servers)) if reserve_servers is not None else self.reserve_servers
+                    new_event   = max(0.0, float(event_time))  if event_time is not None      else self.event_time
+                    plan_locked = self.event_time > 0.0 and self.reserve_servers > 1
+                    if new_reserve <= 1 or not plan_locked:      # stand-down, or first commit
+                        self.reserve_servers = new_reserve
+                        self.event_time      = new_event
+                    # else: plan locked — keep the committed crowd + time
             self.last_updated = time.monotonic()
 
     def snapshot(self) -> PolicyView:
@@ -139,7 +164,12 @@ class SharedPolicy:
                 # operator override wins over the judge's tuning when present
                 lyapunov_V=self.operator_V if self.operator_V is not None else self.lyapunov_V,
                 lyapunov_W=self.operator_W if self.operator_W is not None else self.lyapunov_W,
+                # min_servers = the OPERATOR SLA floor only. The judge's pre-provisioning reserve is
+                # exposed separately (with its event_time) so the fast loop can apply it on schedule
+                # — from event_time - ramp_time — instead of immediately.
                 min_servers=self.min_servers,
+                reserve_servers=self.reserve_servers,
+                event_time=self.event_time,
                 last_updated=self.last_updated,
             )
 
@@ -159,7 +189,9 @@ class SharedPolicy:
                 f"Policy: storm_active={self.storm_active}, "
                 f"malicious_drop_prob={self.malicious_drop_prob:.2f}, "
                 f"queue_hold_threshold={self.queue_hold_threshold}, "
-                f"lyapunov_V={self.lyapunov_V:.1f}, lyapunov_W={self.lyapunov_W:.2f}"
+                f"lyapunov_V={self.lyapunov_V:.1f}, lyapunov_W={self.lyapunov_W:.2f}, "
+                f"reserve_servers={self.reserve_servers}"
+                f"{f', event_time={self.event_time:.0f}s' if self.event_time > 0 else ''}"
                 f"{age_str}.{op}"
             )
 
@@ -181,3 +213,12 @@ class RunStats:
     llm_latency_s:      float = 0.0   # cumulative wall time inside agent.run() (pure LLM + tool calls)
     assessment_latency_s: float = 0.0 # cumulative wall time for the WHOLE assessment
                                        # (telemetry summary + prompt build + LLM + policy write)
+    # Peak pre-provisioning the judge committed this episode (largest crowd estimate + the reserve
+    # it mapped to). Used by exp_1 to score how well each LLM reasoned about the scheduled event.
+    judge_peak_attendance: int = 0
+    judge_peak_reserve:    int = 0
+    # Per-assessment reasoning trace: one record per judge cycle (the telemetry window it saw, its
+    # articulated reasoning, the decision, and the plan the policy actually held). Lets us replay
+    # HOW each LLM reasoned, not just the aggregate score. Filled in _do_assessment; dumped per
+    # episode by the experiment runner. Empty by default so nothing changes for callers that ignore it.
+    traces:               list = field(default_factory=list, repr=False)

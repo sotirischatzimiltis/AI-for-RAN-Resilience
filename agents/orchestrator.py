@@ -166,7 +166,7 @@ async def run_episode(
     Parameters
     ----------
     model                 : pydantic-ai model object or string
-    scenario              : 'single_storm' | 'multi_storm'
+    scenario              : 'single_storm' | 'mixed_flat_step' | ... (see runtime.start)
     seed                  : RNG seed
     c_max                 : maximum server count
     rt_factor             : wall-clock seconds per simulated second

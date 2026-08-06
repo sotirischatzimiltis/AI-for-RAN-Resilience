@@ -1,7 +1,7 @@
 # Project Structure
 
 > **Living document — keep it current.** Update this file whenever a script,
-> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-07-20.
+> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-03.
 
 An agentic controller for signaling-storm resilience in Open RAN: a **3-tier control
 stack** (Orchestrator → LLM storm judge → deterministic fast loop) sitting on top of a
@@ -32,23 +32,26 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 |---|---|
 | `README.md` | per-file / per-component guide to the whole `sim/` package |
 | `simulator.py` | SimPy discrete-event engine: UE attach, T300 retries, storms, botnet, servers |
-| `config.py` | scenarios & traffic (`single_storm`, `multi_storm`, `multi_storm_flat`), arch constants, stressor knobs |
+| `config.py` | scenarios & traffic (`single_storm`, `botnet_event` (exp_1), `mixed_storm` ×4, `multi_storm_flat`/`_ramp`, `event_surge`), arch constants, stressor knobs |
 | `controllers.py` | deterministic controllers (Fixed / Lyapunov) — the **baselines** |
-| `metrics.py` | resilience P, benign-served & botnet-blocked rates, utility, efficiency, attach-latency, `resilience_multi` |
+| `metrics.py` | resilience P, benign-served & botnet-blocked rates (episode + **per-storm-window**: `per_storm_benign_served`/`per_storm_blocked`), utility, efficiency, attach-latency, `resilience_multi`. **Utility (`utility_parts`):** uA is UTILISATION-based — `uA=1/(1+exp(kA·(rho−mfracA)))`, `rho=lam/(c·mu)`; `kA`(=κ)=10 is the c-independent steepness, `mfracA`=0.90 the utilisation knee (uA=0.5 at rho=0.9). ONE utility shared by the LyapunovController and the score. **Baseline-at-rest (`resilience_multi`/`recovery_report`):** per-storm `u_des` is averaged over calm samples at REST capacity (utilisation ρ≥0.5), skipping the pre-provisioning ramp that lands in [t0-lookback,t0] — else the reserve inflates the baseline and the recovery bar becomes unreachable (cell returns to true-rest u<0.95·inflated → never "recovers"). **Diagnostic decomposition (does NOT change P):** `utility_parts` splits u into uA (capacity-margin)+uB (queue-health); `utility_decomposition` reports per-window mean uA/uB/rho; `recovery_report` exposes the detector internals (u_des, target, recovered, post_peak_u) so a censored `tr` can be checked against the logs |
 
 ### `agents/` — the agentic control layer (the "brain")
 | File | Role |
 |---|---|
 | `orchestrator.py` | network tier: understands operator intents; `run_episode()` (full-system runner) |
 | `non_rt_agent.py` | the **LLM storm judge** (the model under comparison); token/cost accounting |
+| `rule_based_controller.py` | the judge prompt's decision tree as **deterministic rules** (no LLM); the Exp 2 baseline that isolates what the LLM adds |
 | `near_rt_control_loop.py` | the fast deterministic loop (Lyapunov capacity + applies the judge-set filter) |
 
 ### `shared/` — state + utilities shared across tiers (not actors)
 | File | Role |
 |---|---|
-| `policy.py` | `SharedPolicy` (judge↔fast-loop handoff) + `EpisodeStats` (counters, LLM usage) |
+| `policy.py` | `SharedPolicy` (judge↔fast-loop handoff) + `RunStats` (counters, LLM usage). Carries the **scheduled reserve**: `reserve_servers` + `event_time` (fast loop applies it from `event_time − ramp_time`, so servers are online by the event without provisioning too early; `event_time=0` = apply now, rule/operator path) |
 | `forecast.py` | the λ-regression behind the `get_forecast` MCP tool |
-| `event_calendar.py` | scheduled-event data behind the `get_calendar` MCP tool |
+| `event_calendar.py` | scheduled-event data behind the `get_calendar` MCP tool. `summarize_calendar(..., committed)` annotates events the judge has already provisioned a reserve for ("do NOT re-estimate") so it acts on each event ONCE, while the event stays visible so its surge is still classified benign (`SimHost.mark_event_committed`; reset each episode) |
+| `events.py` | **Exp 4** event portfolio: `VenueEvent` + the 12 real events (reserve-sizing ground truth) |
+| `verdict.py` | shared `Verdict` record both judges (rule + LLM) emit — the agreement/shadow join |
 | `storm_memory.py` | learned storm-signature (within/across-episode learning) |
 | `policy_store.py` | persists tuned knobs + learned signature between episodes (JSON at repo root) |
 
@@ -77,7 +80,9 @@ measures only `storm_active` + `malicious_drop_prob`.
 ### `prompts/` — system prompts the LLMs read
 | File | Role |
 |---|---|
-| `non_rt_agent_system_prompt.md` | full judge prompt (used by the full system, phases A–E) |
+| `non_rt_agent_system_prompt.md` | full judge prompt v1 (default; used by the full system, phases A–E) |
+| `non_rt_agent_system_prompt_v2.md` | judge prompt v2 (A/B candidate: explicit calendar-timing in-progress/upcoming/none + persistence rules). Run via `exp_1_llm_judges --prompt <file> --tag v2` |
+| `non_rt_agent_system_prompt_v3.md` | judge prompt v3: **scheduled one-shot reserve** — judge writes `expected_attendance` + `event_time` once; the fast loop provisions the reserve at `event_time − ramp_time` (see `near_rt_control_loop.ramp_time`). Calendar now gives absolute times |
 | `orchestrator.md` | operator-intent prompt |
 | `exp1_model_comparison_non_rt_system_prompt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
 
@@ -107,9 +112,11 @@ measures only `storm_active` + `malicious_drop_prob`.
 **Experiment scripts:**
 | Script | Experiment |
 |---|---|
-| `exp1_model_comparison_non_rt.py` | **Exp 1: LLM model selection — self-contained** (own bare-judge episode; does not use `run_episode`) |
-| `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov vs full agentic (gemini); self-contained |
+| `exp_1_llm_judges.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the 5 models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_llm_judges/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
+| `exp1_model_comparison_non_rt.py` | retired bare-judge bake-off (kept for reference; no longer imported by the base) |
+| `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + rule vs full agentic (Exp 1 winner). Likely to be folded away; exp_1 is the base and does not depend on it |
 | `exp_3_V_W_tuning.py` | **Exp 3: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
+| `exp_4_reserve_sizing.py` | **Exp 4: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (Non-RT justification) |
 | `ablation.py` | mechanism knockouts (forecast/calendar/release/learning) |
 | `learning_curve.py`, `learning_demo.py` | learning experiments |
 | `plot_vw_tuning.py` | Exp 3 figures (delay-lines / heatmaps / Pareto) |
@@ -119,5 +126,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 - **Live runs** source `~/.zshrc` for the OpenRouter key and pass `--model openrouter:<slug>`.
 
 ## Experiment plan (phases)
-- **Exp 1** — model bake-off → pick the judge LLM (`exp1_model_comparison_non_rt.py`)
+- **Exp 1** — LLM judges in the full agentic loop (headline result) → downselect the winning model for Exp 2–4 (`exp_1_llm_judges.py`)
+- **Exp 2** — system comparison (baselines + rule vs the Exp 1 winner)
+- **Exp 3** — V/W × provisioning-delay sweep · **Exp 4** — reserve sizing (calendar judgement)
 - **A** headline (Static/Lyapunov/Agentic) · **B** ablations · **C** learning curve · **D** robustness (κ, provisioning, cadence) · **E** orchestrator/intents
