@@ -53,7 +53,6 @@ from scripts.run import resolve_model
 # loop directly; never touches the Orchestrator / run_episode).
 from agents.non_rt_agent import build_non_rt_agent, compose_system_prompt, run_assessment_loop
 from agents.near_rt_control_loop import run_control_loop
-from agents.rule_based_controller import RuleBasedController, ShadowRunner
 from shared.policy import SharedPolicy, RunStats
 from sim.config import single_storm_traffic, mixed_storm_traffic
 from sim.metrics import (resilience_multi, benign_success_rate, benign_false_positive_rate,
@@ -61,7 +60,7 @@ from sim.metrics import (resilience_multi, benign_success_rate, benign_false_pos
                         resilience_efficiency, per_storm_benign_served, utility_decomposition,
                         utility, utility_parts, recovery_report)
 from shared.events import EXP1_EVENT
-from runtime import UP, host as sim_host, scenario_calendar, LLM_COMPARE
+from runtime import UP, host as sim_host, LLM_COMPARE
 
 _EXP_DIR   = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison"
 _LOGS_DIR  = _EXP_DIR / "logs"        # per-run results: model_comparison[_<tag>]_<timestamp>.json (blessed copy = model_comparison.json)
@@ -228,13 +227,6 @@ async def run_agentic(model, scenario, seed, args, model_settings=None) -> dict:
                    t_post=(20.0 if scenario == "single_storm" else None),
                    provision_parallel=not args.serial)
 
-    shadow = None
-    if args.shadow:
-        rule = RuleBasedController(calendar=scenario_calendar(scenario, _traffic(scenario)),
-                                   anticipation=antic, assessment_interval=args.assessment_interval,
-                                   util_p=UP)
-        shadow = ShadowRunner(rule)
-
     stop_event = asyncio.Event()
 
     async def _watch():
@@ -246,7 +238,7 @@ async def run_agentic(model, scenario, seed, args, model_settings=None) -> dict:
         _watch(),
         run_control_loop(policy, stop_event, 1.0, stats, memory=None),
         run_assessment_loop(non_rt, policy, stop_event, args.assessment_interval, stats,
-                            window_s=args.window_s, shadow=shadow, model_settings=model_settings),
+                            window_s=args.window_s, model_settings=model_settings),
     )
 
     sim = sim_host.sim
@@ -324,8 +316,6 @@ async def run_agentic(model, scenario, seed, args, model_settings=None) -> dict:
            "errors": stats.non_rt_errors,
            "traces": stats.traces,                     # per-assessment reasoning trace (dumped per episode)
            "recovery": recov, "util_trace": util_trace}  # recovery internals + per-sample utility (dumped per episode)
-    if shadow is not None:
-        out["shadow"] = shadow.agreement()
     return out
 
 
@@ -594,7 +584,6 @@ if __name__ == "__main__":
     p.add_argument("--no-anticipation", action="store_true",
                    help="disable forecast/calendar (debug only; the headline runs WITH tools)")
     p.add_argument("--serial", action="store_true", help="serial provisioning (default: parallel)")
-    p.add_argument("--shadow", action="store_true", help="also run the rule in shadow (off by default)")
     p.add_argument("--save", action="store_true",
                    help="write results + a per-model checkpoint to a timestamped "
                         "experiments/exp1_model_comparison/model_comparison[_<tag>]_<timestamp>.json")

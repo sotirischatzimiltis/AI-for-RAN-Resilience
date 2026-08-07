@@ -23,7 +23,6 @@ from pydantic_ai.usage import UsageLimits
 from mcp_server.server import MCP_HOST, MCP_PORT
 from runtime import host as sim_host
 from shared.policy import SharedPolicy, RunStats
-from shared.verdict import Verdict
 from shared.events import reserve_for          # crowd -> reserve floor (the sim owns this math)
 from sim.metrics import resting_lam
 
@@ -78,23 +77,6 @@ class PolicyUpdate(BaseModel):
                                                     "lyapunov_V, lyapunov_W, and the event reserve/time) should be applied")
     reasoning:            str   = Field(description="1-2 sentences citing the leading signals (lam, retry-rate)")
 
-
-def policyupdate_to_verdict(pu: PolicyUpdate, telemetry, source: str = "agent") -> Verdict:
-    """Map the LLM's PolicyUpdate onto the shared Verdict record so its decision lines up,
-    field-for-field, with the rule controller's Verdict (agreement = a join). Evidence fields
-    it doesn't compute (severity/elevated/...) stay at their defaults; latest/resting lam are
-    filled from telemetry for context."""
-    s  = telemetry[-1] if telemetry else None
-    mu = sim_host.sim.mu_single if sim_host.sim else 28.7
-    reserve = reserve_for(pu.expected_attendance, mu) if pu.expected_attendance else 1  # crowd -> floor
-    return Verdict(
-        t=(s.t if s else 0.0), source=source,
-        storm_active=pu.storm_active, malicious_drop_prob=pu.malicious_drop_prob,
-        lyapunov_V=pu.lyapunov_V, reserve_servers=reserve, tighten=pu.tighten,
-        latest_lam=(s.lam_current if s else 0.0),
-        resting_lam=(resting_lam(telemetry) if telemetry else 0.0),
-        reasoning=pu.reasoning,
-    )
 
 # Which read tools are live this episode — a SYSTEM-prompt fact (a capability), not
 # per-cycle evidence. get_episode_stats is always on; the anticipation tools are
@@ -255,7 +237,6 @@ async def _do_assessment(
     assessment: int, # what number this assessment is
     stats:      RunStats | None,  # LLM meter to fold this call into (tokens/latency/errors); None = skip bookkeeping
     window_s:   float = 40.0,         # how many seconds of telemetry the summary covers
-    shadow=None,                      # optional ShadowRunner: run the rule on the SAME telemetry (no actuation)
     model_settings: dict | None = None,  # per-call LLM settings; None -> pinned default (timeout + temp=0)
 ) -> "PolicyUpdate | None":           # the verdict (None on error); loop callers ignore it
     t0     = time.monotonic()                        # start of the WHOLE assessment (for asmt-latency stat)
@@ -352,9 +333,6 @@ async def _do_assessment(
                 "held_reserve":        policy.reserve_servers,  # effective plan after the lock
                 "held_event_time":     policy.event_time,
             })
-        if shadow is not None and sim_host.sim is not None:   # run the rule on the SAME telemetry
-            shadow.observe(sim_host.sim,                       # (records the pair; never actuates)
-                           policyupdate_to_verdict(verdict, sim_host.sim.telemetry))
         return verdict                          # hand the verdict back (callers may ignore it)
     except Exception as e:
         # includes request timeouts and, for agent/MCP runs, exceptions wrapped in a
@@ -381,7 +359,6 @@ async def run_assessment_loop(
     interval:   float = 10.0, # seconds between assessments
     stats:      RunStats | None = None, # if i will save the run stats for logging
     window_s:   float = 40.0, # how much telemtry each assessment sees.
-    shadow=None,              # optional ShadowRunner: score the rule against the agent each cycle
     model_settings: dict | None = None,  # per-call LLM settings forwarded to each assessment (None -> pinned default)
 ) -> None:
     """
@@ -404,7 +381,7 @@ async def run_assessment_loop(
         assessment += 1
         if stats:
             stats.non_rt_assessments += 1
-        await _do_assessment(agent, policy, assessment, stats, window_s=window_s, shadow=shadow,
+        await _do_assessment(agent, policy, assessment, stats, window_s=window_s,
                              model_settings=model_settings)
 
     # Always run ONE final assessment after the episode ends (captures the recovery state)
@@ -412,4 +389,4 @@ async def run_assessment_loop(
     if stats:
         stats.non_rt_assessments += 1
     print(f"[Non-RT]  Episode complete — running final assessment #{assessment}.")
-    await _do_assessment(agent, policy, assessment, stats, window_s=window_s, shadow=shadow)
+    await _do_assessment(agent, policy, assessment, stats, window_s=window_s)

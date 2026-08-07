@@ -20,7 +20,6 @@ results/
 
 # Exp run logs (large; regenerable) — keep the json/png/tex, drop the logs
 experiments/exp3_vw_tuning/logs/
-experiments/exp2_system_comparison/logs/
 
 # Exp 1 (model comparison): keep only the README and the blessed results JSON.
 # Timestamped run outputs, logs, and per-episode reasoning/util traces are large and regenerable.
@@ -28,7 +27,12 @@ experiments/exp1_model_comparison/*
 !experiments/exp1_model_comparison/README.md
 !experiments/exp1_model_comparison/model_comparison.json
 
+# Exp 2 (system comparison): keep only the README and the blessed results JSON.
+# Timestamped run outputs and logs are large and regenerable.
+experiments/exp2_system_comparison/*
+!experiments/exp2_system_comparison/README.md
+!experiments/exp2_system_comparison/system_comparison.json
+
 # Other experiment outputs + local analysis plots — kept local for now
-experiments/exp2_system_comparison/
 experiments/exp4_reserve_sizing/
 utility_plots/

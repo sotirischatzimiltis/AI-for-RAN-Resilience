@@ -51,7 +51,6 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 | `forecast.py` | the λ-regression behind the `get_forecast` MCP tool |
 | `event_calendar.py` | scheduled-event data behind the `get_calendar` MCP tool. `summarize_calendar(..., committed)` annotates events the judge has already provisioned a reserve for ("do NOT re-estimate") so it acts on each event ONCE, while the event stays visible so its surge is still classified benign (`SimHost.mark_event_committed`; reset each episode) |
 | `events.py` | **Exp 4** event portfolio: `VenueEvent` + the 12 real events (reserve-sizing ground truth) |
-| `verdict.py` | shared `Verdict` record both judges (rule + LLM) emit — the agreement/shadow join |
 | `storm_memory.py` | learned storm-signature (within/across-episode learning) |
 | `policy_store.py` | persists tuned knobs + learned signature between episodes (JSON at repo root) |
 
@@ -104,7 +103,7 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 | Script | Experiment |
 |---|---|
 | `exp_1_model_comparison.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_model_comparison/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
-| `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + rule vs full agentic (Exp 1 winner). Likely to be folded away; exp_1 is the base and does not depend on it |
+| `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + calendar-free rule vs the full agentic framework, run with BOTH Exp-1 judges (gemini + gpt-5.4-mini reasoning-on). Same `botnet_event` scenario as Exp 1, SERIAL provisioning by default (`--parallel` ablation). Every arm reports the same resilience decomposition via `_episode_metrics` (P, P_bot/P_surge, benign+benign_fp, filtered/blocked, servers, rho/uA/uB). Timestamped outputs + `--resume`; blessed `system_comparison.json` tracked |
 | `exp_3_V_W_tuning.py` | **Exp 3: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
 | `exp_4_reserve_sizing.py` | **Exp 4: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (Non-RT justification) |
 | `ablation.py` | mechanism knockouts (forecast/calendar/release/learning) |
