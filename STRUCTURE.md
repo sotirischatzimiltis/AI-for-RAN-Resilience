@@ -65,7 +65,7 @@ The judge's **decision surface** (`PolicyUpdate`) is: `storm_active`, `malicious
 `stats` + `forecast` + `calendar`, capacity knobs tuned to pre-provision (`tighten=true`), the
 code-side release valve on, and optional learned auto-engage (`--learn-*`) plus operator intents.
 
-The earlier **bare-judge bake-off** (telemetry-only, fixed capacity, `get_episode_stats` only,
+The earlier **bare-judge comparison** (telemetry-only, fixed capacity, `get_episode_stats` only,
 isolating raw model judgment) is **retired** — its script, prompt, and results were removed;
 `exp_1_model_comparison.py` now compares models in the full agentic loop instead.
 

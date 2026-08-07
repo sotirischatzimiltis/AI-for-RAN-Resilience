@@ -52,7 +52,7 @@ the traffic timeline. All plain dataclasses (pure data + a few derived helpers).
 | &nbsp;&nbsp;`.__post_init__` | Validates the run knobs: `compute_rho_cap ∈ [0, 1)`, `compute_kappa > c_max`, `benign_fp_alpha ∈ [0, 1]`, `c0 ≤ c_max`. |
 | `single_storm_traffic()` | The prior paper's scenario: 20 → 200 → 20 UEs/s, one benign-only storm. |
 | `multi_storm_traffic()` | Three storms of **growing** intensity with a botnet component (evolution demo). |
-| `multi_storm_flat_traffic()` | N **identical** storms on a compressed timeline — the fair variant for the LLM bake-off and learning curve (later-storm gains are attributable to learning, not an easier storm). |
+| `multi_storm_flat_traffic()` | N **identical** storms on a compressed timeline — the fair variant for the LLM comparison and learning curve (later-storm gains are attributable to learning, not an easier storm). |
 
 ---
 
