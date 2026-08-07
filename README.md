@@ -64,14 +64,14 @@ sim/                            the simulator (the "world"; no AI) — see sim/R
 └── README.md                   per-file / per-component guide to sim/
 
 prompts/
-├── non_rt_agent_system_prompt.md   full-system storm-judge prompt
-├── exp1_model_comparison_non_rt_system_prompt.md        bare-judge prompt (Experiment 1 model selection)
+├── non_rt_agent_system_prompt.md   full-system storm-judge prompt (default; scheduled-reserve)
+├── non_rt_agent_system_prompt_v1.md / _v2.md   archived judge-prompt versions
 └── orchestrator.md             operator-intent prompt
 
 scripts/
 ├── run.py                      full-system episode CLI (Orchestrator → run_episode)
 ├── run_near_rt.py              bare fast-loop + judge runner (no Orchestrator)
-├── exp1_model_comparison_non_rt.py   Experiment 1 — LLM storm-judge model selection
+├── exp_1_model_comparison.py         Experiment 1 — LLM model comparison (choose the judge)
 ├── exp_2_system_comparison.py        Experiment 2 — baselines vs full agentic system
 ├── exp_3_V_W_tuning.py               Experiment 3 — V/W × provisioning-delay sweep
 ├── ablation.py                 ablation sweep (forecast / calendar / learning)

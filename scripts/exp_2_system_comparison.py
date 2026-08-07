@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from mcp_server.server import mcp, MCP_HOST, MCP_PORT
 from scripts.run import resolve_model
-from scripts.exp1_model_comparison_non_rt import _Tee, _prevent_sleep   # reuse logging + no-sleep
+from scripts.exp_1_model_comparison import _Tee, _prevent_sleep   # reuse logging + no-sleep
 # Low-level building blocks — the agentic run is SELF-CONTAINED (like Experiment 1): it drives
 # the fast loop + judge loop directly and never touches the Orchestrator / run_episode.
 from agents.non_rt_agent import build_non_rt_agent, compose_system_prompt, run_assessment_loop

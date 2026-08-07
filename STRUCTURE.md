@@ -1,7 +1,7 @@
 # Project Structure
 
 > **Living document — keep it current.** Update this file whenever a script,
-> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-03.
+> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-07.
 
 An agentic controller for signaling-storm resilience in Open RAN: a **3-tier control
 stack** (Orchestrator → LLM storm judge → deterministic fast loop) sitting on top of a
@@ -55,36 +55,27 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 | `storm_memory.py` | learned storm-signature (within/across-episode learning) |
 | `policy_store.py` | persists tuned knobs + learned signature between episodes (JSON at repo root) |
 
-### The storm judge (`non_rt_agent.py`) — two run modes
+### The storm judge (`non_rt_agent.py`)
 
 The judge's **decision surface** (`PolicyUpdate`) is: `storm_active`, `malicious_drop_prob`
-(now an LLM-**calibrated** value in (0,1], not a fixed 0.8), the slow capacity knobs
+(an LLM-**calibrated** value in (0,1], not a fixed 0.8), the slow capacity knobs
 `lyapunov_V / lyapunov_W / queue_hold_threshold` (applied only when `tighten=true`), and
-`reasoning`. It runs in two configurations:
+`reasoning`. It runs inside the full system — `run.py` → `run_episode` and the self-contained
+`exp_1_model_comparison.py` loop — with prompt `prompts/non_rt_agent_system_prompt.md`, tools
+`stats` + `forecast` + `calendar`, capacity knobs tuned to pre-provision (`tighten=true`), the
+code-side release valve on, and optional learned auto-engage (`--learn-*`) plus operator intents.
 
-| Setting | **Full system** (`run.py` → `run_episode`) | **Bare judge** (Exp 1) |
-|---|---|---|
-| Prompt | `prompts/non_rt.md` | `prompts/exp1_model_comparison_non_rt_system_prompt.md` |
-| Tools offered | `stats` + `forecast` + `calendar` | `get_episode_stats` only |
-| Capacity knobs (V/W/queue_hold) | judge tunes them (`tighten=true`) to pre-provision | **inert** — prompt forces `tighten=false`; capacity is fixed Lyapunov (V=1, W=1) |
-| Release valve (code-side filter drop) | on | off |
-| Learned auto-engage | optional (`--learn-*`) | off |
-| Operator intents | yes | none |
-| Reasoning on/off | model default | explicitly toggled (bake-off ablation) |
-| Isolates | full agentic performance | **raw model judgment** (storm + drop only) |
-
-In Exp 1 the capacity knobs still exist in the shared `PolicyUpdate` schema but are
-neutralized, so every model faces an identical fixed-capacity baseline and the comparison
-measures only `storm_active` + `malicious_drop_prob`.
+The earlier **bare-judge bake-off** (telemetry-only, fixed capacity, `get_episode_stats` only,
+isolating raw model judgment) is **retired** — its script, prompt, and results were removed;
+`exp_1_model_comparison.py` now compares models in the full agentic loop instead.
 
 ### `prompts/` — system prompts the LLMs read
 | File | Role |
 |---|---|
-| `non_rt_agent_system_prompt.md` | full judge prompt v1 (default; used by the full system, phases A–E) |
-| `non_rt_agent_system_prompt_v2.md` | judge prompt v2 (A/B candidate: explicit calendar-timing in-progress/upcoming/none + persistence rules). Run via `exp_1_llm_judges --prompt <file> --tag v2` |
-| `non_rt_agent_system_prompt_v3.md` | judge prompt v3: **scheduled one-shot reserve** — judge writes `expected_attendance` + `event_time` once; the fast loop provisions the reserve at `event_time − ramp_time` (see `near_rt_control_loop.ramp_time`). Calendar now gives absolute times |
+| `non_rt_agent_system_prompt.md` | **DEFAULT** judge prompt (was `_v3`): **scheduled one-shot reserve** — judge writes `expected_attendance` + `event_time` once; the fast loop provisions the reserve at `event_time − ramp_time` (see `near_rt_control_loop.ramp_time`). Calendar gives absolute times. Loaded by the full system and all experiments |
+| `non_rt_agent_system_prompt_v1.md` | archived judge prompt v1 (the former default; verbose full judge, phases A–E). Kept for reference. Run via `exp_1_model_comparison --prompt <file> --tag v1` |
+| `non_rt_agent_system_prompt_v2.md` | archived judge prompt v2 (A/B candidate: explicit calendar-timing in-progress/upcoming/none + persistence rules) |
 | `orchestrator.md` | operator-intent prompt |
-| `exp1_model_comparison_non_rt_system_prompt.md` | trimmed **bare-judge** prompt for Experiment 1 (telemetry-only) |
 
 ### `mcp_server/` — tools the judge can call
 | File | Role |
@@ -112,8 +103,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 **Experiment scripts:**
 | Script | Experiment |
 |---|---|
-| `exp_1_llm_judges.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the 5 models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_llm_judges/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
-| `exp1_model_comparison_non_rt.py` | retired bare-judge bake-off (kept for reference; no longer imported by the base) |
+| `exp_1_model_comparison.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_model_comparison/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
 | `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + rule vs full agentic (Exp 1 winner). Likely to be folded away; exp_1 is the base and does not depend on it |
 | `exp_3_V_W_tuning.py` | **Exp 3: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
 | `exp_4_reserve_sizing.py` | **Exp 4: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (Non-RT justification) |
@@ -126,7 +116,7 @@ measures only `storm_active` + `malicious_drop_prob`.
 - **Live runs** source `~/.zshrc` for the OpenRouter key and pass `--model openrouter:<slug>`.
 
 ## Experiment plan (phases)
-- **Exp 1** — LLM judges in the full agentic loop (headline result) → downselect the winning model for Exp 2–4 (`exp_1_llm_judges.py`)
+- **Exp 1** — LLM model comparison in the full agentic loop (headline result) → downselect the winning model for Exp 2–4 (`exp_1_model_comparison.py`)
 - **Exp 2** — system comparison (baselines + rule vs the Exp 1 winner)
 - **Exp 3** — V/W × provisioning-delay sweep · **Exp 4** — reserve sizing (calendar judgement)
 - **A** headline (Static/Lyapunov/Agentic) · **B** ablations · **C** learning curve · **D** robustness (κ, provisioning, cadence) · **E** orchestrator/intents

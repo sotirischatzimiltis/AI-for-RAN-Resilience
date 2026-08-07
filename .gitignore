@@ -18,16 +18,15 @@ scripts/compare_baselines.py
 scripts/plot_compare.py
 results/
 
-# Exp 1 run logs (large; regenerable) — keep the json/png/tex, drop the logs
-experiments/exp1_model_comparison/logs/
+# Exp run logs (large; regenerable) — keep the json/png/tex, drop the logs
 experiments/exp3_vw_tuning/logs/
 experiments/exp2_system_comparison/logs/
 
-# Exp 1 (LLM judge selection): keep only the README and the final results JSON.
-# Logs, per-episode reasoning/util traces, and intermediate runs are large and regenerable.
-experiments/exp1_llm_judges/*
-!experiments/exp1_llm_judges/README.md
-!experiments/exp1_llm_judges/llm_judges_rho_serial.json
+# Exp 1 (model comparison): keep only the README and the blessed results JSON.
+# Timestamped run outputs, logs, and per-episode reasoning/util traces are large and regenerable.
+experiments/exp1_model_comparison/*
+!experiments/exp1_model_comparison/README.md
+!experiments/exp1_model_comparison/model_comparison.json
 
 # Other experiment outputs + local analysis plots — kept local for now
 experiments/exp2_system_comparison/

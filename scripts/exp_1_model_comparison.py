@@ -21,9 +21,18 @@ experiment file is deleted.
 Each model runs at pinned temperature 0 for reproducibility, except reasoning-ON variants (which
 providers force to their default) — per-model settings are threaded to each agent.run() call.
 
+The default judge prompt is `prompts/non_rt_agent_system_prompt.md` (the scheduled-reserve prompt,
+formerly `_v3`), so no `--prompt` flag is needed; pass one only to A/B an archived version.
+
+Every saved run is written to a TIMESTAMPED file (`model_comparison[_<tag>]_<stamp>.json`) so runs
+never overwrite each other; the blessed result the manuscript cites is hand-copied to
+`experiments/exp1_model_comparison/model_comparison.json` (the only JSON tracked in git).
+
 Usage (source the shell env for the OpenRouter key first):
-    python -m scripts.exp_1_llm_judges --seeds 5 --save --resume --log
-    python -m scripts.exp_1_llm_judges --seeds 1 --models gemini-3.1        # smoke test
+    # authoritative run (its result was blessed as model_comparison.json)
+    python -m scripts.exp_1_model_comparison --serial --seeds 5 --save --resume --log
+    python -m scripts.exp_1_model_comparison --seeds 5 --save --resume --log
+    python -m scripts.exp_1_model_comparison --seeds 1 --models gemini-3.1        # smoke test
 """
 
 import argparse
@@ -54,8 +63,8 @@ from sim.metrics import (resilience_multi, benign_success_rate, benign_false_pos
 from shared.events import EXP1_EVENT
 from runtime import UP, host as sim_host, scenario_calendar, LLM_COMPARE
 
-_EXP_DIR   = Path(__file__).parent.parent / "experiments" / "exp1_llm_judges"
-_LOGS_DIR  = _EXP_DIR / "logs"        # results file is per-run: experiments/exp1_llm_judges/llm_judges[_<tag>].json
+_EXP_DIR   = Path(__file__).parent.parent / "experiments" / "exp1_model_comparison"
+_LOGS_DIR  = _EXP_DIR / "logs"        # per-run results: model_comparison[_<tag>]_<timestamp>.json (blessed copy = model_comparison.json)
 _TRACE_DIR = _EXP_DIR / "reasoning"   # per-episode reasoning traces (one JSONL per model x seed)
 
 REQUEST_TIMEOUT_S = 60.0
@@ -575,8 +584,9 @@ if __name__ == "__main__":
                    help="path to the judge system-prompt file to test (default: v1). Use with --tag "
                         "to A/B a second prompt version without clobbering the first run's output.")
     p.add_argument("--tag", default="",
-                   help="label for this run's output files (e.g. --tag v2 -> llm_judges_v2.json + "
-                        "log_llm_judges_v2_*.txt). Empty -> the default llm_judges.json.")
+                   help="label folded into this run's output files (e.g. --tag v2 -> "
+                        "model_comparison_v2_<timestamp>.json). Every run is timestamped, so a fresh "
+                        "run never overwrites a prior one or the blessed model_comparison.json.")
     p.add_argument("--rt-factor", type=float, default=1.0, dest="rt_factor")
     p.add_argument("--assessment-interval", type=float, default=5.0, dest="assessment_interval")
     p.add_argument("--window", type=float, default=15.0, dest="window_s",
@@ -586,24 +596,32 @@ if __name__ == "__main__":
     p.add_argument("--serial", action="store_true", help="serial provisioning (default: parallel)")
     p.add_argument("--shadow", action="store_true", help="also run the rule in shadow (off by default)")
     p.add_argument("--save", action="store_true",
-                   help="write results + a per-model checkpoint to experiments/exp1_llm_judges/llm_judges.json")
+                   help="write results + a per-model checkpoint to a timestamped "
+                        "experiments/exp1_model_comparison/model_comparison[_<tag>]_<timestamp>.json")
     p.add_argument("--resume", action="store_true",
-                   help="reload that checkpoint and skip models already done (same seeds+scenarios). "
-                        "Use with --save to continue a crashed/partial sweep.")
+                   help="reload the NEWEST matching timestamped checkpoint and skip models already "
+                        "done (same seeds+scenarios). Use with --save to continue a crashed sweep.")
     p.add_argument("--log", nargs="?", const="AUTO", default=None,
-                   help="tee output to a file (bare --log auto-names it under exp1_llm_judges/logs/)")
+                   help="tee output to a file (bare --log auto-names it under exp1_model_comparison/logs/)")
     args = p.parse_args()
 
-    # Load the chosen judge prompt and route output to per-tag files so a v1/v2 A/B stays separate.
+    # Load the chosen judge prompt and route output to a per-run, TIMESTAMPED file so a new run
+    # never overwrites a previous one or the blessed, hand-picked `model_comparison.json` that the
+    # manuscript cites. `--resume` continues the NEWEST matching run instead of starting a new file.
     args.system_prompt = Path(args.prompt).read_text()
-    args.ckpt_path = _EXP_DIR / (f"llm_judges_{args.tag}.json" if args.tag else "llm_judges.json")
+    run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base = f"model_comparison_{args.tag}" if args.tag else "model_comparison"
+    if args.resume:
+        prior = sorted(_EXP_DIR.glob(f"{base}_[0-9]*.json"))   # timestamps start with the year digit
+        args.ckpt_path = prior[-1] if prior else _EXP_DIR / f"{base}_{run_stamp}.json"
+    else:
+        args.ckpt_path = _EXP_DIR / f"{base}_{run_stamp}.json"
     print(f"[exp1] prompt: {Path(args.prompt).name}   ->  results: {args.ckpt_path.name}")
 
     _logfile = None
     if args.log is not None:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        _slug = f"{args.tag}_{stamp}" if args.tag else stamp
-        log_path = (_LOGS_DIR / f"log_llm_judges_{_slug}.txt"
+        _slug = f"{args.tag}_{run_stamp}" if args.tag else run_stamp
+        log_path = (_LOGS_DIR / f"log_model_comparison_{_slug}.txt"
                     if args.log == "AUTO" else Path(args.log))
         log_path.parent.mkdir(parents=True, exist_ok=True)
         _logfile = open(log_path, "w")
