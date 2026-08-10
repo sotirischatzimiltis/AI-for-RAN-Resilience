@@ -1,5 +1,5 @@
 """
-Experiment 4 — reserve sizing: does the Non-RT LLM size a scheduled surge better than a rule?
+Experiment 3 — reserve sizing: does the Non-RT LLM size a scheduled surge better than a rule?
 
 The one place a language model should beat a hardcoded controller: reading a free-text calendar
 entry and REASONING to the crowd it implies. Three arms size the pre-provisioning reserve for
@@ -17,9 +17,9 @@ QoS (penalises under-reserve) and servers used (penalises over-reserve). Split b
 the arms should tie on sold-out (flag suffices) and separate on the rest.
 
 Usage (rules only, no API — check the design):
-    python -m scripts.exp_4_reserve_sizing
+    python -m scripts.exp_3_reserve_sizing
 With the LLM arm (needs the OpenRouter key):
-    python -m scripts.exp_4_reserve_sizing --llm --save
+    python -m scripts.exp_3_reserve_sizing --llm --save
 """
 
 import argparse
@@ -51,7 +51,7 @@ C_MAX = 16
 MU    = open_ran_arch().service_rate()      # per-server service rate the reserve math uses
 AGENT_MODEL  = "openrouter:google/gemini-3.1-flash-lite"   # Exp 1 winner
 _STORM_PROMPT = (Path(__file__).parent.parent / "prompts" / "non_rt_agent_system_prompt.md").read_text()
-_EXP_DIR = Path(__file__).parent.parent / "experiments" / "exp4_reserve_sizing"
+_EXP_DIR = Path(__file__).parent.parent / "experiments" / "exp3_reserve_sizing"
 
 
 # ------------------------------- the rule arms (attendance -> reserve) --------------------------
@@ -218,7 +218,7 @@ async def main(args):
 
 
 if __name__ == "__main__":
-    p = argparse.ArgumentParser(description="Experiment 4 — reserve sizing: rules vs LLM")
+    p = argparse.ArgumentParser(description="Experiment 3 — reserve sizing: rules vs LLM")
     p.add_argument("--llm", action="store_true", help="include the LLM arm (real Non-RT agent; needs the OpenRouter key)")
     p.add_argument("--event", type=int, default=None, metavar="N",
                    help="run ONLY portfolio event N (0-based; see --list-events). Default: all 12")
@@ -228,9 +228,9 @@ if __name__ == "__main__":
     p.add_argument("--flat", type=int, default=10, help="flat rule's fixed reserve")
     p.add_argument("--fraction", type=float, default=None,
                    help="formula rule's fixed fill fraction (default = best-fit over non-sold-out)")
-    p.add_argument("--save", action="store_true", help="cache records+reasoning to exp4_reserve_sizing/reserve_sizing.json")
+    p.add_argument("--save", action="store_true", help="cache records+reasoning to exp3_reserve_sizing/reserve_sizing.json")
     p.add_argument("--log", nargs="?", const="AUTO", default=None,
-                   help="tee ALL output to a file (bare --log auto-names it under exp4_reserve_sizing/logs/)")
+                   help="tee ALL output to a file (bare --log auto-names it under exp3_reserve_sizing/logs/)")
     args = p.parse_args()
 
     _logfile = None

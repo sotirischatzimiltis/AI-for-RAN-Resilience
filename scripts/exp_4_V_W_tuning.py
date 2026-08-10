@@ -1,5 +1,5 @@
 """
-Experiment 3 — Lyapunov weight (V, W) calibration / capacity-cost trade-off.
+Experiment 4 — Lyapunov weight (V, W) calibration / capacity-cost trade-off.
 
 Sweeps the Near-RT controller's utility weight V and server-cost weight W over a 2-D grid,
 with the Non-RT LLM judge REMOVED: the weights are held FIXED at each grid point and only the
@@ -23,8 +23,8 @@ weights, dominates resilience — which is exactly the case for anticipation (pr
 surge). The sweep therefore also varies the delay (0/2/5/10 s).
 
 Usage:
-    python -m scripts.exp_3_V_W_tuning --seeds 5 --save          # full V x W x delay{0,2,5,10} sweep
-    python -m scripts.exp_3_V_W_tuning --v-grid 1 5 20 --w-grid 1 --provision-delay 0 5
+    python -m scripts.exp_4_V_W_tuning --seeds 5 --save          # full V x W x delay{0,2,5,10} sweep
+    python -m scripts.exp_4_V_W_tuning --v-grid 1 5 20 --w-grid 1 --provision-delay 0 5
 """
 
 import argparse
@@ -58,7 +58,7 @@ _SCENARIOS = {
 # scenarios whose storm carries a botnet, so the filter is pinned ON (capacity is the only variable)
 _BOTNET_SCENARIOS = {"multi_storm_flat", "multi_storm_ramp"}
 
-_EXP_DIR  = Path(__file__).parent.parent / "experiments" / "exp3_vw_tuning"
+_EXP_DIR  = Path(__file__).parent.parent / "experiments" / "exp4_vw_tuning"
 _LOGS_DIR = _EXP_DIR / "logs"
 
 # Student-t 97.5th percentile by SAMPLE SIZE n (df=n-1); 1.96 fallback for large n. Same as Exp 1.
@@ -323,9 +323,9 @@ if __name__ == "__main__":
                    help="server provisioning delays (s) to sweep as the actuation-lag axis "
                         "(default: 0 2 5 10). 0 = instant; 5 = the realistic value.")
     p.add_argument("--save", action="store_true",
-                   help="cache results to experiments/exp3_vw_tuning/vw_tuning.json")
+                   help="cache results to experiments/exp4_vw_tuning/vw_tuning.json")
     p.add_argument("--log", nargs="?", const="AUTO", default=None,
-                   help="tee output to a file; bare --log auto-names under exp3_vw_tuning/logs/")
+                   help="tee output to a file; bare --log auto-names under exp4_vw_tuning/logs/")
     args = p.parse_args()
 
     _logfile = None

@@ -1,8 +1,8 @@
 """
 Plot Experiment 3 — Lyapunov (V, W) x provisioning-delay sweep.
 
-Reads experiments/exp3_vw_tuning/vw_tuning.json (written by exp_3_V_W_tuning.py --save) and
-renders, per scenario, three figures under experiments/exp3_vw_tuning/:
+Reads experiments/exp4_vw_tuning/vw_tuning.json (written by exp_4_V_W_tuning.py --save) and
+renders, per scenario, three figures under experiments/exp4_vw_tuning/:
 
   1. vw_delay_lines.png  — resilience P and benign completion vs provisioning delay, one line per V
      (W=1 slice, 95% CI bands). The headline: QoS collapses as the delay grows, and V cannot
@@ -25,12 +25,12 @@ matplotlib.use("Agg")                 # headless: write PNGs, no display
 import matplotlib.pyplot as plt
 import numpy as np
 
-_JSON = Path(__file__).parent.parent / "experiments" / "exp3_vw_tuning" / "vw_tuning.json"
+_JSON = Path(__file__).parent.parent / "experiments" / "exp4_vw_tuning" / "vw_tuning.json"
 
 
 def _load():
     if not _JSON.exists():
-        sys.exit(f"No results at {_JSON} — run scripts.exp_3_V_W_tuning --save first.")
+        sys.exit(f"No results at {_JSON} — run scripts.exp_4_V_W_tuning --save first.")
     return json.loads(_JSON.read_text())
 
 
@@ -168,7 +168,7 @@ def main():
     if modes_path.exists():                               # the serial-vs-parallel comparison
         plot_modes(json.loads(modes_path.read_text()), d / "vw_provisioning_modes.png")
     if not _JSON.exists() and not modes_path.exists():
-        sys.exit(f"No results in {d} — run scripts.exp_3_V_W_tuning --save first.")
+        sys.exit(f"No results in {d} — run scripts.exp_4_V_W_tuning --save first.")
 
 
 if __name__ == "__main__":

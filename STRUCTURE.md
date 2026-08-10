@@ -1,7 +1,7 @@
 # Project Structure
 
 > **Living document — keep it current.** Update this file whenever a script,
-> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-07.
+> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-10.
 
 An agentic controller for signaling-storm resilience in Open RAN: a **3-tier control
 stack** (Orchestrator → LLM storm judge → deterministic fast loop) sitting on top of a
@@ -50,7 +50,7 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 | `policy.py` | `SharedPolicy` (judge↔fast-loop handoff) + `RunStats` (counters, LLM usage). Carries the **scheduled reserve**: `reserve_servers` + `event_time` (fast loop applies it from `event_time − ramp_time`, so servers are online by the event without provisioning too early; `event_time=0` = apply now, rule/operator path) |
 | `forecast.py` | the λ-regression behind the `get_forecast` MCP tool |
 | `event_calendar.py` | scheduled-event data behind the `get_calendar` MCP tool. `summarize_calendar(..., committed)` annotates events the judge has already provisioned a reserve for ("do NOT re-estimate") so it acts on each event ONCE, while the event stays visible so its surge is still classified benign (`SimHost.mark_event_committed`; reset each episode) |
-| `events.py` | **Exp 4** event portfolio: `VenueEvent` + the 12 real events (reserve-sizing ground truth) |
+| `events.py` | **Exp 3** event portfolio: `VenueEvent` + the 12 real events (reserve-sizing ground truth) |
 | `storm_memory.py` | learned storm-signature (within/across-episode learning) |
 | `policy_store.py` | persists tuned knobs + learned signature between episodes (JSON at repo root) |
 
@@ -104,18 +104,19 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 |---|---|
 | `exp_1_model_comparison.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_model_comparison/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
 | `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + calendar-free rule vs the full agentic framework, run with BOTH Exp-1 judges (gemini + gpt-5.4-mini reasoning-on). Same `botnet_event` scenario as Exp 1, SERIAL provisioning by default (`--parallel` ablation). Every arm reports the same resilience decomposition via `_episode_metrics` (P, P_bot/P_surge, benign+benign_fp, filtered/blocked, servers, rho/uA/uB). Timestamped outputs + `--resume`; blessed `system_comparison.json` tracked |
-| `exp_3_V_W_tuning.py` | **Exp 3: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
-| `exp_4_reserve_sizing.py` | **Exp 4: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (Non-RT justification) |
-| `ablation.py` | mechanism knockouts (forecast/calendar/release/learning) |
-| `learning_curve.py`, `learning_demo.py` | learning experiments |
-| `plot_vw_tuning.py` | Exp 3 figures (delay-lines / heatmaps / Pareto) |
+| `exp_3_reserve_sizing.py` | **Exp 3: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (attendance estimation; Non-RT justification) |
+| `exp_4_V_W_tuning.py` | **Exp 4: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
+| `exp_5_ablation.py` | **Exp 5:** mechanism knockouts (forecast/calendar/learning) |
+| `learning_curve.py`, `learning_demo.py` | **Exp 7:** memory / evolution (cross-episode learning) |
+| `plot_vw_tuning.py` | Exp 4 figures (delay-lines / heatmaps / Pareto) |
 
 ## Runtime notes
 - **Interpreter:** use `/Users/admin/miniforge3/envs/pydantic-ai-env/bin/python` (pydantic-ai 1.70). The repo `.venv` has an OLD pydantic-ai that breaks MCP imports.
 - **Live runs** source `~/.zshrc` for the OpenRouter key and pass `--model openrouter:<slug>`.
 
 ## Experiment plan (phases)
-- **Exp 1** — LLM model comparison in the full agentic loop (headline result) → downselect the winning model for Exp 2–4 (`exp_1_model_comparison.py`)
-- **Exp 2** — system comparison (baselines + rule vs the Exp 1 winner)
-- **Exp 3** — V/W × provisioning-delay sweep · **Exp 4** — reserve sizing (calendar judgement)
-- **A** headline (Static/Lyapunov/Agentic) · **B** ablations · **C** learning curve · **D** robustness (κ, provisioning, cadence) · **E** orchestrator/intents
+- **Exp 1** — LLM model comparison → downselect the judge (`exp_1_model_comparison.py`)
+- **Exp 2** — system comparison (Static/Lyapunov/rule vs the full agentic framework)
+- **Exp 3** — event-portfolio reserve sizing (attendance estimation vs flat/formula rules)
+- **Exp 4** — V/W × provisioning-delay sweep (resilience–cost Pareto)
+- **Exp 5** — mechanism ablation (forecast / calendar / learning) · **Exp 6** — operator intents · **Exp 7** — memory / evolution

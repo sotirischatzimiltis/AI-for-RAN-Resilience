@@ -73,8 +73,9 @@ scripts/
 ├── run_near_rt.py              bare fast-loop + judge runner (no Orchestrator)
 ├── exp_1_model_comparison.py         Experiment 1 — LLM model comparison (choose the judge)
 ├── exp_2_system_comparison.py        Experiment 2 — baselines vs full agentic system
-├── exp_3_V_W_tuning.py               Experiment 3 — V/W × provisioning-delay sweep
-├── ablation.py                 ablation sweep (forecast / calendar / learning)
+├── exp_3_reserve_sizing.py           Experiment 3 — event-portfolio reserve sizing (attendance estimation)
+├── exp_4_V_W_tuning.py               Experiment 4 — V/W × provisioning-delay sweep
+├── exp_5_ablation.py                 Experiment 5 — mechanism ablation (forecast / calendar / learning)
 └── gui.py                      live GUI viewer of a running episode
 
 experiments/                    curated results per experiment (data, figures, LaTeX)

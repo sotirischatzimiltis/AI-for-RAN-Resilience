@@ -6,7 +6,7 @@ over the event (domain, venue, artist/opponent, sold-out flag) to estimate atten
 only apply a fixed heuristic. This is the one axis where the LLM's judgement should beat a
 hardcoded controller (binary storm/filter calls, we already showed, a rule matches ~99%).
 
-Code: `shared/events.py` (model + `PORTFOLIO`), `scripts/exp_4_reserve_sizing.py` (the 3 arms).
+Code: `shared/events.py` (model + `PORTFOLIO`), `scripts/exp_3_reserve_sizing.py` (the 3 arms).
 
 ## Surge / reserve model
 ```
@@ -75,7 +75,7 @@ The portfolio deliberately **breaks the sold-out <-> high-fill correlation**:
 No single fraction serves both 6–7 and 10–12, so the formula rule (its best fit, fraction 0.85
 under headroom sizing) is forced into a dilemma: it still under-reserves the surprise-high (row 6
 formula 12 vs ideal 13) while over-reserving the low-fill rows. Outcome table below is regenerated
-each `exp_4_reserve_sizing` run (the pre-headroom numbers are stale — refresh on the next full run):
+each `exp_3_reserve_sizing` run (the pre-headroom numbers are stale — refresh on the next full run):
 
 | arm | group | benign QoS | avg servers |
 |---|---|---|---|

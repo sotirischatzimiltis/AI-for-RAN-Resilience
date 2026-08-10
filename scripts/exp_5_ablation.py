@@ -18,7 +18,7 @@ Costs API calls (one full episode per config per seed). Report P alongside the
 two security rates — never P alone (see FEATURES.md, the two evaluation axes).
 
 Usage (sources the shell env for the API key):
-    python -m scripts.ablation --model openrouter:openai/gpt-4o-mini \\
+    python -m scripts.exp_5_ablation --model openrouter:openai/gpt-4o-mini \\
         --scenario multi_storm --seeds 5 --save
 """
 
