@@ -54,4 +54,31 @@ so `--resume` continues a crashed sweep); the blessed result cited in the manusc
 `system_comparison.json`. Timestamped run outputs and logs are git-ignored; only this README and
 `system_comparison.json` are tracked.
 
-_Result table + findings to be filled once the headline run is blessed._
+## Results (5 seeds, serial provisioning, mean ± 95% CI)
+Blessed run: `system_comparison_20260807_204609.json`.
+
+| System | `P` | `P_bot` | `P_surge` | Benign served | Benign FP | Filtered | Avg. servers | Efficiency |
+|---|---|---|---|---|---|---|---|---|
+| Static (c=1) | 0.639 ± 0.003 | 0.764 | 0.513 | 0.232 | 0.000 | 0.000 | 1.00 | 10.22 ± 0.05 |
+| Static (c=8) | 0.697 ± 0.005 | 0.854 | 0.540 | 0.396 | 0.000 | 0.000 | 8.00 | 1.39 ± 0.01 |
+| Static (c=16) | 0.992 ± 0.000 | 0.993 | 0.990 | 1.000 | 0.000 | 0.000 | 16.00 | 0.99 ± 0.00 |
+| Lyapunov | 0.684 ± 0.002 | 0.818 | 0.549 | 0.312 | 0.000 | 0.000 | 2.57 | 4.25 ± 0.01 |
+| Deterministic (rules) | 0.710 ± 0.005 | 0.838 | 0.583 | 0.341 | 0.143 | 0.941 | 2.77 | 4.10 ± 0.04 |
+| **Agentic (gemini-3.1-flash-lite)** | 0.864 ± 0.003 | 0.836 | 0.893 | 0.997 | 0.003 | 0.842 | 3.48 | 3.97 ± 0.02 |
+| **Agentic (gpt-5.4-mini, reasoning on)** | 0.903 ± 0.009 | 0.829 | 0.977 | 0.998 | 0.002 | 0.506 | 4.19 | 3.45 ± 0.13 |
+
+### Findings
+- **The botnet window barely separates the arms** (`P_bot` 0.76–0.99): the attack saturates the cell
+  under every policy, so raw resilience there is capacity-bound, not skill-bound.
+- **The event window is where the ladder separates.** The surge is a step and provisioning is serial,
+  so any controller that reacts only once load is visible cannot bring capacity online in time. The
+  static `c∈{1,8}` and Lyapunov arms serve ≤40% of the surge (`P_surge` ≤ 0.55). Only static `c=16`
+  absorbs it — at 16 held servers, no filter, and the worst efficiency (0.99).
+- **The rule shows what the LLM adds.** With the filter + forecast but no calendar, the rule contains
+  the botnet (filters 94%) but misreads the benign surge as an attack, dropping 14% of legitimate
+  users (`benign_fp` 0.143) and reaching only `P_surge` 0.58.
+- **Both agentic arms anticipate the event**, pre-provision the reserve, and withhold the filter for
+  its duration: benign service ≈ 0.997–0.998 and `benign_fp` ≈ 0.002–0.003, giving `P_surge` 0.89
+  (gemini) / 0.98 (gpt-5.4-mini). They approach the resilience of the fully-provisioned static `c=16`
+  while holding only ~3.5–4.2 servers, i.e. ~3–4× its efficiency. The **rule → agentic gap isolates
+  the value of anticipation** (same actuators, differ only in knowing the scheduled load in advance).
