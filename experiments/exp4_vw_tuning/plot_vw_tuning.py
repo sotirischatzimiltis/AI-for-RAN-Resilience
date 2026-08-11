@@ -1,5 +1,5 @@
 """
-Plot Experiment 3 — Lyapunov (V, W) x provisioning-delay sweep.
+Plot Experiment 4 — Lyapunov (V, W) x provisioning-delay sweep.
 
 Reads experiments/exp4_vw_tuning/vw_tuning.json (written by exp_4_V_W_tuning.py --save) and
 renders, per scenario, three figures under experiments/exp4_vw_tuning/:
@@ -12,8 +12,8 @@ renders, per scenario, three figures under experiments/exp4_vw_tuning/:
   3. vw_pareto.png       — P vs avg_servers (capacity cost), one series per delay: the
      resilience-cost frontier and how the delay shifts it.
 
-Usage:
-    python -m scripts.plot_vw_tuning
+Usage (run from this folder, next to its data + outputs):
+    python plot_vw_tuning.py
 """
 
 import json
@@ -25,7 +25,14 @@ matplotlib.use("Agg")                 # headless: write PNGs, no display
 import matplotlib.pyplot as plt
 import numpy as np
 
-_JSON = Path(__file__).parent.parent / "experiments" / "exp4_vw_tuning" / "vw_tuning.json"
+_JSON = Path(__file__).parent / "vw_tuning.json"   # this script lives in the exp4 folder, next to its data + outputs
+
+# pretty scenario labels for figure titles (the two onset shapes)
+_SCN_LABEL = {"single_storm": "Step onset", "single_ramp": "Ramp onset"}
+
+
+def _scn(name):
+    return _SCN_LABEL.get(name, name)
 
 
 def _load():
@@ -60,7 +67,7 @@ def plot_delay_lines(data, out):
                 ys, es = np.array(ys), np.array(es)
                 ax.plot(delays, ys, "-o", color=cmap[vi], label=f"V={V:g}")
                 ax.fill_between(delays, ys - es, ys + es, color=cmap[vi], alpha=0.15)
-            ax.set_title(f"{scn} — {label}")
+            ax.set_title(f"{_scn(scn)} — {label}")
             ax.set_xlabel("provisioning delay (s)")
             ax.set_ylabel(label)
             ax.grid(alpha=0.3)
@@ -85,7 +92,7 @@ def plot_heatmaps(data, out):
             M = np.array([[(_cell(res, d, scn, V, W) or {}).get("P_mean", np.nan)
                            for W in w_grid] for V in v_grid])
             im = ax.imshow(M, origin="lower", aspect="auto", cmap="magma", vmin=0.5, vmax=1.0)
-            ax.set_title(f"{scn}\ndelay={d:g}s", fontsize=9)
+            ax.set_title(f"{_scn(scn)}\ndelay={d:g}s", fontsize=9)
             ax.set_xticks(range(len(w_grid))); ax.set_xticklabels([f"{w:g}" for w in w_grid], fontsize=7)
             ax.set_yticks(range(len(v_grid))); ax.set_yticklabels([f"{v:g}" for v in v_grid], fontsize=7)
             if c == 0:
@@ -119,7 +126,7 @@ def plot_pareto(data, out):
                     if c:
                         xs.append(c["avg_servers_mean"]); ys.append(c["P_mean"])
             ax.scatter(xs, ys, color=cmap[di], s=30, label=f"delay={d:g}s", alpha=0.8)
-        ax.set_title(scn); ax.set_xlabel("avg_servers (capacity cost)"); ax.set_ylabel("Resilience P")
+        ax.set_title(_scn(scn)); ax.set_xlabel("avg_servers (capacity cost)"); ax.set_ylabel("Resilience P")
         ax.grid(alpha=0.3); ax.legend(fontsize=8)
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     fig.savefig(out, dpi=130)
@@ -147,7 +154,7 @@ def plot_modes(data, out):
                 es = np.array([cells.get(f"V={v},W={W0}", {}).get(ci, 0.0) for v in v_grid])
                 ax.plot(v_grid, ys, "-o", color=colors.get(mode), label=mode)
                 ax.fill_between(v_grid, ys - es, ys + es, color=colors.get(mode), alpha=0.15)
-            ax.set_title(f"{scn} — {label}")
+            ax.set_title(f"{_scn(scn)} — {label}")
             ax.set_xlabel("utility weight V"); ax.set_ylabel(label)
             ax.set_xscale("log"); ax.grid(alpha=0.3); ax.set_ylim(0, 1.05)
             if col == 1 and r == 0:

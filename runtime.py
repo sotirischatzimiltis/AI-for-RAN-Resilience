@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from sim.config import (
     SimConfig, open_ran_arch, RRCConfig,
-    single_storm_traffic, multi_storm_flat_traffic,
+    single_storm_traffic, single_ramp_traffic, multi_storm_flat_traffic,
     multi_storm_ramp_traffic, mixed_storm_traffic, botnet_event_traffic, BENIGN_SURGE_IDX,
 )
 from sim.simulator import StormSim
@@ -105,6 +105,12 @@ class SimHost:
         elif scenario == "multi_storm_ramp":
             traffic          = multi_storm_ramp_traffic()   # ramped storms (forecast can anticipate)
             self.t0, self.td = 60.0, 120.0
+        elif scenario == "single_ramp":
+            # benign single-surge with a RAMP onset — the twin of single_storm (STEP); Exp 4
+            # sweeps both to isolate load-shape x V/W x provisioning delay (no botnet, filter off).
+            kw               = {"t_post": t_post} if t_post is not None else {}
+            traffic          = single_ramp_traffic(**kw)
+            self.t0, self.td = 50.0, 110.0
         elif scenario in _MIXED_SCENARIOS:
             # one mixed scenario, four versions over two axes: onset step/ramp (step = calendar
             # is the only anticipation signal; ramp = forecast can fire too) x intensity

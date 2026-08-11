@@ -197,6 +197,26 @@ def single_storm_traffic(normal=20.0, storm=200.0,
     ])
 
 
+def single_ramp_traffic(normal=20.0, peak=200.0, t_pre=50.0, ramp=30.0, hold=30.0,
+                        t_post=900.0, ramp_steps=6) -> TrafficConfig:
+    """The RAMP twin of single_storm_traffic: benign load rises from `normal` to `peak` over
+    `ramp`s as a staircase of `ramp_steps` constant sub-phases, holds for `hold`s, then recovers.
+    Same `peak` and same elevated span (ramp+hold = the plateau of single_storm) as the step
+    scenario, so the two differ ONLY in onset shape (gradual vs instant). This isolates how the
+    load's RATE OF CHANGE interacts with V/W tuning and the server provisioning delay: a step
+    overruns a reactive loop while a ramp lets it track. No botnet — a pure capacity study,
+    filtering is irrelevant here."""
+    phases = [TrafficPhase(0.0, t_pre, normal, 0.0, "pre")]
+    t = t_pre
+    step_dt = ramp / ramp_steps
+    for k in range(1, ramp_steps + 1):                     # staircase normal -> peak
+        b = normal + (peak - normal) * (k / ramp_steps)
+        phases.append(TrafficPhase(t, t + step_dt, b, 0.0, f"ramp.{k}")); t += step_dt
+    phases.append(TrafficPhase(t, t + hold, peak, 0.0, "hold")); t += hold
+    phases.append(TrafficPhase(t, t + t_post, normal, 0.0, "recovery"))
+    return TrafficConfig(baseline_rate=normal, phases=phases)
+
+
 def multi_storm_flat_traffic(benign=180.0, botnet=60.0, normal=20.0,
                              lead=60.0, storm=60.0, gap=120.0,
                              n_storms=3) -> TrafficConfig:

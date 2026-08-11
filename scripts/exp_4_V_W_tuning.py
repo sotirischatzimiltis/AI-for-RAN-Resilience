@@ -8,19 +8,21 @@ property, not the judge's — see Exp 1), and makes the sweep free (no API), fas
 reproducible. The weights enter through lyapunov_optimal_c(...): higher V favours QoS -> more
 servers -> more headroom (higher P) at higher capacity cost; higher W penalises servers.
 
-Scenarios:
-  single_storm     — benign surge, NO botnet, filter OFF: a pure capacity study.
-  multi_storm_flat — botnet storms, filter FIXED ON (storm_active=True, drop=1.0) so that V/W is
-                     the only variable under attack.
+This is a PURE CAPACITY study — no judge, no admission filter, no anticipation. Benign-vs-malicious
+is irrelevant here; what matters is the LOAD SHAPE, the weights (V, W), and the provisioning delay.
+Two benign single-surge scenarios that differ ONLY in onset shape:
+  single_storm  — STEP onset: benign load jumps 20 -> 200 UEs/s instantly, then recovers.
+  single_ramp   — RAMP onset: benign load climbs 20 -> 200 over 30 s (a staircase), holds, recovers.
+Same peak and same elevated span, so the comparison isolates the load's RATE OF CHANGE.
 
-Per (V, W): resilience P, benign completion, botnet-blocked, and avg_servers (the capacity-cost
-proxy). Each reported as mean + 95% CI (Student-t) over seeds. The output is the resilience-cost
-Pareto the operator can later slide along.
+Per (V, W): resilience P, benign completion, and avg_servers (the capacity-cost proxy). Each
+reported as mean + 95% CI (Student-t) over seeds. The output is the resilience-cost Pareto the
+operator can later slide along.
 
-A third axis is the server provisioning delay (actuation lag): with a realistic 5 s delay a
-reactive controller cannot ramp capacity in time, so V/W tuning barely helps; the delay, not the
-weights, dominates resilience — which is exactly the case for anticipation (provision BEFORE the
-surge). The sweep therefore also varies the delay (0/2/5/10 s).
+A third axis is the server provisioning delay (actuation lag): under a STEP the reactive controller
+cannot bring capacity online in time, so at a realistic 5 s delay V/W tuning barely helps — the
+delay, not the weights, dominates resilience. Under a RAMP the same controller can track the rising
+load, so the delay penalty is far milder. The sweep therefore also varies the delay (0/2/5/10 s).
 
 Usage:
     python -m scripts.exp_4_V_W_tuning --seeds 5 --save          # full V x W x delay{0,2,5,10} sweep
@@ -49,14 +51,14 @@ from sim.metrics import (resilience_multi, benign_success_rate,
 V_GRID = [1.0, 2.0, 5.0, 10.0, 20.0]
 W_GRID = [1.0, 2.0, 5.0, 10.0, 20.0]
 
-# scenario -> t_post (single-storm only; multi is fixed-horizon). Mirrors Exp 1.
+# The two benign single-surge scenarios, keyed to their t_post override (short recovery keeps runs
+# fast). They differ ONLY in onset shape (step vs ramp); value = post-surge calm duration (s).
 _SCENARIOS = {
-    "single_storm":     20.0,
-    "multi_storm_flat": None,
-    "multi_storm_ramp": None,
+    "single_storm": 20.0,   # STEP onset
+    "single_ramp":  20.0,   # RAMP onset
 }
-# scenarios whose storm carries a botnet, so the filter is pinned ON (capacity is the only variable)
-_BOTNET_SCENARIOS = {"multi_storm_flat", "multi_storm_ramp"}
+# No scenario here carries a botnet: this is a pure capacity study, so the admission filter stays OFF.
+_BOTNET_SCENARIOS: set[str] = set()
 
 _EXP_DIR  = Path(__file__).parent.parent / "experiments" / "exp4_vw_tuning"
 _LOGS_DIR = _EXP_DIR / "logs"
@@ -303,9 +305,9 @@ def _print_one(cells, scenario, v_grid, w_grid) -> None:
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Lyapunov V/W tuning sweep (no LLM)")
     p.add_argument("--scenario", nargs="*", default=["both"],
-                   choices=["both", "single_storm", "multi_storm_flat", "multi_storm_ramp"],
-                   help="scenarios to run (default: both = all). e.g. "
-                        "--scenario multi_storm_flat multi_storm_ramp")
+                   choices=["both", "single_storm", "single_ramp"],
+                   help="onset shapes to run (default: both = step + ramp). "
+                        "single_storm = STEP, single_ramp = RAMP")
     p.add_argument("--seeds", type=int, default=5)
     p.add_argument("--provision-mode", default="serial", dest="provision_mode",
                    choices=["serial", "parallel", "both"],
