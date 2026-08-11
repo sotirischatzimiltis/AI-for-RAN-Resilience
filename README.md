@@ -74,9 +74,14 @@ scripts/
 ├── exp_1_model_comparison.py         Experiment 1 — LLM model comparison (choose the judge)
 ├── exp_2_system_comparison.py        Experiment 2 — baselines vs full agentic system
 ├── exp_3_reserve_sizing.py           Experiment 3 — event-portfolio reserve sizing (attendance estimation)
-├── exp_4_V_W_tuning.py               Experiment 4 — V/W × provisioning-delay sweep
-├── exp_5_ablation.py                 Experiment 5 — mechanism ablation (forecast / calendar / learning)
+├── exp_4_V_W_tuning.py               Experiment 4 — V/W × provisioning-delay sweep (benign step vs ramp)
+├── exp_5_compute_contention.py       Experiment 5 — compute-contention sensitivity (shared vCU/vDU pool)
+├── ablation.py                       mechanism ablation (forecast / calendar / learning) — retired from the paper, kept as a diagnostic
 └── gui.py                      live GUI viewer of a running episode
+
+# per-experiment figure scripts live inside each experiment's folder, e.g.
+#   experiments/exp3_reserve_sizing/plot_reserve_sizing.py
+#   experiments/exp4_vw_tuning/plot_vw_tuning.py
 
 experiments/                    curated results per experiment (data, figures, LaTeX)
 ├── README.md                   the campaign index (Exp 1 + Phases A–E)

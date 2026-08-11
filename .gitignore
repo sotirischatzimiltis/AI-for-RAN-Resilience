@@ -33,6 +33,13 @@ experiments/exp2_system_comparison/*
 !experiments/exp2_system_comparison/README.md
 !experiments/exp2_system_comparison/system_comparison.json
 
+# Exp 5 (compute contention): keep the README, the blessed results JSON, and any plot script.
+# Timestamped run outputs and logs are large and regenerable.
+experiments/exp5_compute_contention/*
+!experiments/exp5_compute_contention/README.md
+!experiments/exp5_compute_contention/compute_contention.json
+!experiments/exp5_compute_contention/*.py
+
 # Other experiment outputs + local analysis plots — kept local for now
 experiments/exp3_reserve_sizing/
 utility_plots/

@@ -1,7 +1,7 @@
 # Project Structure
 
 > **Living document — keep it current.** Update this file whenever a script,
-> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-10.
+> module, prompt, or folder is added, renamed, or repurposed. Last updated: 2026-08-11.
 
 An agentic controller for signaling-storm resilience in Open RAN: a **3-tier control
 stack** (Orchestrator → LLM storm judge → deterministic fast loop) sitting on top of a
@@ -32,7 +32,7 @@ See [`sim/README.md`](sim/README.md) for a full component-by-component breakdown
 |---|---|
 | `README.md` | per-file / per-component guide to the whole `sim/` package |
 | `simulator.py` | SimPy discrete-event engine: UE attach, T300 retries, storms, botnet, servers |
-| `config.py` | scenarios & traffic (`single_storm`, `botnet_event` (exp_1), `mixed_storm` ×4, `multi_storm_flat`/`_ramp`, `event_surge`), arch constants, stressor knobs |
+| `config.py` | scenarios & traffic (`single_storm` (benign STEP) + `single_ramp` (benign RAMP twin, Exp 4), `botnet_event` (exp_1), `mixed_storm` ×4, `multi_storm_flat`/`_ramp`, `event_surge`), arch constants, stressor knobs incl. `compute_kappa` (shared vCU/vDU pool; None = off, used by Exp 5) |
 | `controllers.py` | deterministic controllers (Fixed / Lyapunov) — the **baselines** |
 | `metrics.py` | resilience P, benign-served & botnet-blocked rates (episode + **per-storm-window**: `per_storm_benign_served`/`per_storm_blocked`), utility, efficiency, attach-latency, `resilience_multi`. **Utility (`utility_parts`):** uA is UTILISATION-based — `uA=1/(1+exp(kA·(rho−mfracA)))`, `rho=lam/(c·mu)`; `kA`(=κ)=10 is the c-independent steepness, `mfracA`=0.90 the utilisation knee (uA=0.5 at rho=0.9). ONE utility shared by the LyapunovController and the score. **Baseline-at-rest (`resilience_multi`/`recovery_report`):** per-storm `u_des` is averaged over calm samples at REST capacity (utilisation ρ≥0.5), skipping the pre-provisioning ramp that lands in [t0-lookback,t0] — else the reserve inflates the baseline and the recovery bar becomes unreachable (cell returns to true-rest u<0.95·inflated → never "recovers"). **Diagnostic decomposition (does NOT change P):** `utility_parts` splits u into uA (capacity-margin)+uB (queue-health); `utility_decomposition` reports per-window mean uA/uB/rho; `recovery_report` exposes the detector internals (u_des, target, recovered, post_peak_u) so a censored `tr` can be checked against the logs |
 
@@ -105,18 +105,26 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 | `exp_1_model_comparison.py` | **Exp 1 — THE BASE**: non-rt-agent LLM comparison to **choose the judge model**. Self-contained (owns `run_agentic`, `_agg`, roster). Sweeps the models on ONE tricky scenario (`botnet_event`: a botnet ramp for get_forecast + a real England-v-Brazil event surge for get_calendar reasoning); scores P/benign/cost AND the judge's crowd estimate vs ground truth; downselects the winner + checkpoints per model (`--resume`). Also dumps each episode's per-assessment reasoning trace to `experiments/exp1_model_comparison/reasoning/*.jsonl` (`_dump_traces`: what the judge saw + its reasoning + decision + held plan, one record per cycle) |
 | `exp_2_system_comparison.py` | **Exp 2: system comparison** — Static(c=1/8/16) + Lyapunov + calendar-free rule vs the full agentic framework, run with BOTH Exp-1 judges (gemini + gpt-5.4-mini reasoning-on). Same `botnet_event` scenario as Exp 1, SERIAL provisioning by default (`--parallel` ablation). Every arm reports the same resilience decomposition via `_episode_metrics` (P, P_bot/P_surge, benign+benign_fp, filtered/blocked, servers, rho/uA/uB). Timestamped outputs + `--resume`; blessed `system_comparison.json` tracked |
 | `exp_3_reserve_sizing.py` | **Exp 3: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (attendance estimation; Non-RT justification) |
-| `exp_4_V_W_tuning.py` | **Exp 4: V/W × provisioning-delay** sweep (no LLM); resilience–cost trade-off |
-| `exp_5_ablation.py` | **Exp 5:** mechanism knockouts (forecast/calendar/learning) |
+| `exp_4_V_W_tuning.py` | **Exp 4: V/W × provisioning-delay** sweep (no LLM). PURE CAPACITY study on two benign onset shapes — `single_storm` (STEP) vs `single_ramp` (RAMP) — no filter. Shows a step at a realistic delay caps P and V/W tuning can't recover it, while a ramp is trackable so tuning still works. resilience–cost Pareto |
+| `exp_5_compute_contention.py` | **Exp 5: compute-contention sensitivity** — re-runs the Exp-2 arm set (reusing its arms + metric decomposition) across a shared-compute-pool axis (`compute_kappa` OFF vs ON). Standalone: does NOT change Exp 1-4. Shows over-provisioning (Static c=16) collapses under a tight pool while lean/adaptive arms are robust. `--no-llm` for the free deterministic preview |
+| `ablation.py` | mechanism knockouts (forecast/calendar/learning). **RETIRED from the paper (2026-08-11)** — Exp 2 isolates anticipation, Exp 3 the calendar, Exp 7 the memory, so a standalone ablation mostly re-proves them. Kept as a diagnostic; de-numbered (was `exp_5_ablation.py`) |
 | `learning_curve.py`, `learning_demo.py` | **Exp 7:** memory / evolution (cross-episode learning) |
-| `plot_vw_tuning.py` | Exp 4 figures (delay-lines / heatmaps / Pareto) |
+
+**Per-experiment figure scripts** live INSIDE each experiment's folder (next to its data + outputs), not in `scripts/`:
+| Script | Figures |
+|---|---|
+| `experiments/exp3_reserve_sizing/plot_reserve_sizing.py` | Exp 3 forest + scatter (attendance estimate vs truth) |
+| `experiments/exp4_vw_tuning/plot_vw_tuning.py` | Exp 4 delay-lines / heatmaps / Pareto (moved here from `scripts/` 2026-08-11) |
 
 ## Runtime notes
 - **Interpreter:** use `/Users/admin/miniforge3/envs/pydantic-ai-env/bin/python` (pydantic-ai 1.70). The repo `.venv` has an OLD pydantic-ai that breaks MCP imports.
 - **Live runs** source `~/.zshrc` for the OpenRouter key and pass `--model openrouter:<slug>`.
 
-## Experiment plan (phases)
+## Experiment plan (paper order, revised 2026-08-11)
 - **Exp 1** — LLM model comparison → downselect the judge (`exp_1_model_comparison.py`)
 - **Exp 2** — system comparison (Static/Lyapunov/rule vs the full agentic framework)
 - **Exp 3** — event-portfolio reserve sizing (attendance estimation vs flat/formula rules)
-- **Exp 4** — V/W × provisioning-delay sweep (resilience–cost Pareto)
-- **Exp 5** — mechanism ablation (forecast / calendar / learning) · **Exp 6** — operator intents · **Exp 7** — memory / evolution
+- **Exp 4** — V/W × provisioning-delay sweep on benign step vs ramp (resilience–cost Pareto)
+- **Exp 5** — compute-contention sensitivity (independent servers vs shared vCU/vDU pool)
+- **Exp 6** — operator intents + multi-site coordination · **Exp 7** — memory / evolution
+- ~~mechanism ablation~~ **dropped** from the paper (kept as `scripts/ablation.py` diagnostic)
