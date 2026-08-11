@@ -1,0 +1,1533 @@
+{
+  "mu": 28.73563218390805,
+  "c_max": 16,
+  "fraction": 0.85,
+  "seeds": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10
+  ],
+  "arms": [
+    "flat",
+    "formula",
+    "gemini",
+    "gpt-5.4-mini"
+  ],
+  "arm_meta": {
+    "gemini": {
+      "slug": "openrouter:google/gemini-3.1-flash-lite",
+      "mode": "n/a"
+    },
+    "gpt-5.4-mini": {
+      "slug": "openrouter:openai/gpt-5.4-mini",
+      "mode": "on"
+    }
+  },
+  "records": [
+    {
+      "name": "Taylor Swift concert",
+      "venue": "Wembley Stadium",
+      "capacity": 90000,
+      "sold_out": true,
+      "attendance": 89000,
+      "ideal": 13,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": -3.0,
+          "benign": 0.5134,
+          "benign_ci": 0.1021,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 14.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 14.0,
+          "est": 90000,
+          "est_ci": 0,
+          "att_err_pct": 1.1,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            90000
+          ],
+          "raw_reserve": [
+            14
+          ]
+        },
+        "gemini": {
+          "reserve": 14.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 14.0,
+          "est": 90000,
+          "est_ci": 0,
+          "att_err_pct": 1.1,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000
+          ],
+          "raw_reserve": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "reasoning": "Taylor Swift concert at Wembley Stadium (sold out). Wembley capacity is 90,000. Provisioning for a full house."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 14.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 14.0,
+          "est": 90000,
+          "est_ci": 0,
+          "att_err_pct": 1.1,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000,
+            90000
+          ],
+          "raw_reserve": [
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14,
+            14
+          ],
+          "reasoning": "Taylor Swift concert at sold-out Wembley Stadium: Wembley is a very large venue and sold out implies a full crowd, so I\u2019d plan for roughly 90,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "Manchester United v Liverpool, Premier League",
+      "venue": "Old Trafford",
+      "capacity": 74310,
+      "sold_out": true,
+      "attendance": 73738,
+      "ideal": 11,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": -1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 11.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 11.0,
+          "est": 74310,
+          "est_ci": 0,
+          "att_err_pct": 0.8,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            74310
+          ],
+          "raw_reserve": [
+            11
+          ]
+        },
+        "gemini": {
+          "reserve": 11.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 11.0,
+          "est": 74200,
+          "est_ci": 302,
+          "att_err_pct": 0.6,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            74000,
+            74000,
+            74000,
+            74000,
+            75000,
+            74000,
+            74000,
+            74000,
+            74000,
+            75000
+          ],
+          "raw_reserve": [
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11
+          ],
+          "reasoning": "Old Trafford is a large stadium (capacity ~74,000). With the match sold out, I will provision for the full capacity of 74,000 attendees."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 11.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 11.0,
+          "est": 74093,
+          "est_ci": 107,
+          "att_err_pct": 0.5,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            74000,
+            74000,
+            74000,
+            74000,
+            74000,
+            74310,
+            74310,
+            74000,
+            74000,
+            74310
+          ],
+          "raw_reserve": [
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11
+          ],
+          "reasoning": "Manchester United v Liverpool is a marquee Premier League derby at sold-out Old Trafford; with a venue capacity around 74k, I\u2019d estimate essentially a full house."
+        }
+      }
+    },
+    {
+      "name": "Arsenal Women v Manchester United, Women's Super League",
+      "venue": "Emirates Stadium",
+      "capacity": 60704,
+      "sold_out": true,
+      "attendance": 60160,
+      "ideal": 9,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 9.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 9.0,
+          "est": 60704,
+          "est_ci": 0,
+          "att_err_pct": 0.9,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            60704
+          ],
+          "raw_reserve": [
+            9
+          ]
+        },
+        "gemini": {
+          "reserve": 9.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 9.0,
+          "est": 60000,
+          "est_ci": 0,
+          "att_err_pct": -0.3,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            60000,
+            60000,
+            60000,
+            60000,
+            60000,
+            60000,
+            60000,
+            60000,
+            60000,
+            60000
+          ],
+          "raw_reserve": [
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9
+          ],
+          "reasoning": "Arsenal Women v Manchester United at Emirates Stadium (capacity ~60,000) is scheduled for t=89s. As it is sold out, I will provision for a full capacity crowd."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 9.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 9.0,
+          "est": 60491,
+          "est_ci": 242,
+          "att_err_pct": 0.6,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            60700,
+            60700,
+            60000,
+            60700,
+            60704,
+            60000,
+            60704,
+            60700,
+            60704,
+            60000
+          ],
+          "raw_reserve": [
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9,
+            9
+          ],
+          "reasoning": "Arsenal Women v Manchester United in the Women's Super League at sold-out Emirates Stadium; a sold-out Emirates is effectively full, so I estimate about 60,700 attendees."
+        }
+      }
+    },
+    {
+      "name": "Liverpool v Real Madrid, Champions League round of 16",
+      "venue": "Anfield",
+      "capacity": 53394,
+      "sold_out": true,
+      "attendance": 52337,
+      "ideal": 8,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 2.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 8.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.0,
+          "est": 53394,
+          "est_ci": 0,
+          "att_err_pct": 2.0,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            53394
+          ],
+          "raw_reserve": [
+            8
+          ]
+        },
+        "gemini": {
+          "reserve": 8.7,
+          "reserve_ci": 0.35,
+          "reserve_err": 0.7,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.7,
+          "est": 58600,
+          "est_ci": 2292,
+          "att_err_pct": 12.0,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            61000,
+            61000,
+            54000,
+            61000,
+            60000,
+            54000,
+            61000,
+            60000,
+            54000,
+            60000
+          ],
+          "raw_reserve": [
+            9,
+            9,
+            8,
+            9,
+            9,
+            8,
+            9,
+            9,
+            8,
+            9
+          ],
+          "reasoning": "Liverpool v Real Madrid at Anfield is a major event. Anfield capacity is approximately 61,000. As it is sold out, I estimate 61,000 attendees."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 8.9,
+          "reserve_ci": 0.23,
+          "reserve_err": 0.9,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.9,
+          "est": 60328,
+          "est_ci": 1592,
+          "att_err_pct": 15.3,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            61000,
+            61276,
+            61000,
+            61000,
+            61000,
+            54000,
+            61000,
+            61000,
+            61000,
+            61000
+          ],
+          "raw_reserve": [
+            9,
+            9,
+            9,
+            9,
+            9,
+            8,
+            9,
+            9,
+            9,
+            9
+          ],
+          "reasoning": "Liverpool v Real Madrid in the Champions League round of 16 is a marquee, sold-out Anfield fixture; with Anfield at full house, I estimate about 61,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "Adele concert",
+      "venue": "The O2 Arena",
+      "capacity": 20000,
+      "sold_out": true,
+      "attendance": 18750,
+      "ideal": 3,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 7.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 3.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 3.0,
+          "est": 20000,
+          "est_ci": 0,
+          "att_err_pct": 6.7,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            20000
+          ],
+          "raw_reserve": [
+            3
+          ]
+        },
+        "gemini": {
+          "reserve": 3.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 3.0,
+          "est": 20000,
+          "est_ci": 0,
+          "att_err_pct": 6.7,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000
+          ],
+          "raw_reserve": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "reasoning": "The Adele concert at The O2 Arena is a major event. Given it is sold out, I estimate a high attendance of 20,000 people. I will provision the reserve now for the t=89s event."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 3.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 3.0,
+          "est": 20000,
+          "est_ci": 0,
+          "att_err_pct": 6.7,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000,
+            20000
+          ],
+          "raw_reserve": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "reasoning": "Adele concert at The O2 Arena is sold out; The O2 is a large arena with concert capacity around 20,000, so a full house implies roughly 20,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "England v Brazil, international friendly",
+      "venue": "Wembley Stadium",
+      "capacity": 90000,
+      "sold_out": false,
+      "attendance": 83664,
+      "ideal": 13,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": -3.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 12.0,
+          "reserve_ci": 0.0,
+          "reserve_err": -1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 12.0,
+          "est": 76500,
+          "est_ci": 0,
+          "att_err_pct": -8.6,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            76500
+          ],
+          "raw_reserve": [
+            12
+          ]
+        },
+        "gemini": {
+          "reserve": 10.6,
+          "reserve_ci": 0.6,
+          "reserve_err": -2.4,
+          "benign": 0.8611,
+          "benign_ci": 0.2095,
+          "servers": 10.6,
+          "est": 71000,
+          "est_ci": 4397,
+          "att_err_pct": -15.1,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            70000,
+            75000,
+            70000,
+            75000,
+            75000,
+            75000,
+            75000,
+            60000,
+            75000,
+            60000
+          ],
+          "raw_reserve": [
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            9,
+            11,
+            9
+          ],
+          "reasoning": "England v Brazil at Wembley Stadium (capacity ~90,000). It is not sold out, so I will estimate 70,000 attendees."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 12.6,
+          "reserve_ci": 0.37,
+          "reserve_err": -0.4,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 12.6,
+          "est": 83400,
+          "est_ci": 1357,
+          "att_err_pct": -0.3,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            85000,
+            84000,
+            85000,
+            86000,
+            82000,
+            82000,
+            85000,
+            82000,
+            80000,
+            83000
+          ],
+          "raw_reserve": [
+            13,
+            13,
+            13,
+            13,
+            12,
+            12,
+            13,
+            12,
+            12,
+            13
+          ],
+          "reasoning": "England v Brazil is a major international friendly at Wembley Stadium, which has roughly 90,000 football capacity. Since the match is not sold out, I\u2019d expect a very large but slightly sub-cap crowd of about 85,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "Chelsea v Manchester United, Women's FA Cup final",
+      "venue": "Wembley Stadium",
+      "capacity": 90000,
+      "sold_out": false,
+      "attendance": 77390,
+      "ideal": 12,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": -2.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 12.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 12.0,
+          "est": 76500,
+          "est_ci": 0,
+          "att_err_pct": -1.2,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            76500
+          ],
+          "raw_reserve": [
+            12
+          ]
+        },
+        "gemini": {
+          "reserve": 10.6,
+          "reserve_ci": 0.9,
+          "reserve_err": -1.4,
+          "benign": 0.9213,
+          "benign_ci": 0.1781,
+          "servers": 10.6,
+          "est": 70500,
+          "est_ci": 6627,
+          "att_err_pct": -8.9,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            45000,
+            75000,
+            75000,
+            75000,
+            70000,
+            70000,
+            75000,
+            75000,
+            75000,
+            70000
+          ],
+          "raw_reserve": [
+            7,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11,
+            11
+          ],
+          "reasoning": "The system is currently at the calm baseline (20 UEs/s). A scheduled event at Wembley is approaching at t=89s, so I am pre-provisioning for an estimated 45,000 attendees."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 11.2,
+          "reserve_ci": 1.11,
+          "reserve_err": -0.8,
+          "benign": 0.9266,
+          "benign_ci": 0.1661,
+          "servers": 11.2,
+          "est": 72900,
+          "est_ci": 7759,
+          "att_err_pct": -5.8,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            50000,
+            76000,
+            75000,
+            70000,
+            78000,
+            80000,
+            80000,
+            58000,
+            77000,
+            85000
+          ],
+          "raw_reserve": [
+            8,
+            12,
+            11,
+            11,
+            12,
+            12,
+            12,
+            9,
+            12,
+            13
+          ],
+          "reasoning": "Chelsea v Manchester United, Women's FA Cup final at Wembley Stadium is a major one-off football match at a very large venue, but it is explicitly not sold out. A realistic attendance is around 50,000 people, below full Wembley capacity but still a strong draw for a final."
+        }
+      }
+    },
+    {
+      "name": "West Ham v FK TSC, Europa League group stage",
+      "venue": "London Stadium",
+      "capacity": 62500,
+      "sold_out": false,
+      "attendance": 41374,
+      "ideal": 6,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 4.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 8.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 2.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.0,
+          "est": 53125,
+          "est_ci": 0,
+          "att_err_pct": 28.4,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            53125
+          ],
+          "raw_reserve": [
+            8
+          ]
+        },
+        "gemini": {
+          "reserve": 7.8,
+          "reserve_ci": 0.3,
+          "reserve_err": 1.8,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 7.8,
+          "est": 49000,
+          "est_ci": 1508,
+          "att_err_pct": 18.4,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            50000,
+            50000,
+            50000,
+            50000,
+            50000,
+            50000,
+            50000,
+            45000,
+            45000,
+            50000
+          ],
+          "raw_reserve": [
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            7,
+            7,
+            8
+          ],
+          "reasoning": "West Ham v FK TSC at London Stadium (capacity ~62,500). Not sold out, so I estimate 50,000 attendees. Scheduled at t=89s."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 8.0,
+          "reserve_ci": 0.34,
+          "reserve_err": 2.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.0,
+          "est": 53300,
+          "est_ci": 1848,
+          "att_err_pct": 28.8,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            54000,
+            58000,
+            54000,
+            52000,
+            54000,
+            52000,
+            52000,
+            55000,
+            54000,
+            48000
+          ],
+          "raw_reserve": [
+            8,
+            9,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            7
+          ],
+          "reasoning": "West Ham v FK TSC is a Europa League group-stage home match at London Stadium, which is a large ~60k venue; 'not sold out' suggests a strong but sub-capacity crowd rather than a full house. I\u2019d expect roughly 54,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "West Ham v Viborg, Europa Conference League",
+      "venue": "London Stadium",
+      "capacity": 62500,
+      "sold_out": false,
+      "attendance": 30230,
+      "ideal": 5,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 5.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 8.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 3.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 8.0,
+          "est": 53125,
+          "est_ci": 0,
+          "att_err_pct": 75.7,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            53125
+          ],
+          "raw_reserve": [
+            8
+          ]
+        },
+        "gemini": {
+          "reserve": 7.8,
+          "reserve_ci": 0.45,
+          "reserve_err": 2.8,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 7.8,
+          "est": 49000,
+          "est_ci": 2262,
+          "att_err_pct": 62.1,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            50000,
+            50000,
+            50000,
+            50000,
+            50000,
+            50000,
+            40000,
+            50000,
+            50000,
+            50000
+          ],
+          "raw_reserve": [
+            8,
+            8,
+            8,
+            8,
+            8,
+            8,
+            6,
+            8,
+            8,
+            8
+          ],
+          "reasoning": "West Ham v Viborg at London Stadium (capacity ~62,500). Not sold out, so estimating 50,000 attendees. Scheduled for t=89s."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 7.6,
+          "reserve_ci": 0.5,
+          "reserve_err": 2.6,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 7.6,
+          "est": 49400,
+          "est_ci": 2764,
+          "att_err_pct": 63.4,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            48000,
+            50000,
+            50000,
+            43000,
+            47000,
+            48000,
+            50000,
+            58000,
+            48000,
+            52000
+          ],
+          "raw_reserve": [
+            7,
+            8,
+            8,
+            7,
+            7,
+            7,
+            8,
+            9,
+            7,
+            8
+          ],
+          "reasoning": "West Ham v Viborg is a Europa Conference League match at London Stadium; with a venue of roughly 60k+ and 'not sold out', a mid-to-high attendance in the high 40-thousands is reasonable."
+        }
+      }
+    },
+    {
+      "name": "Aston Villa Women v Manchester United, Women's Super League",
+      "venue": "Villa Park",
+      "capacity": 42785,
+      "sold_out": false,
+      "attendance": 12533,
+      "ideal": 2,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 8.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 6.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 4.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 6.0,
+          "est": 36367,
+          "est_ci": 0,
+          "att_err_pct": 190.2,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            36367
+          ],
+          "raw_reserve": [
+            6
+          ]
+        },
+        "gemini": {
+          "reserve": 3.9,
+          "reserve_ci": 0.41,
+          "reserve_err": 1.9,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 3.9,
+          "est": 23500,
+          "est_ci": 3393,
+          "att_err_pct": 87.5,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            25000,
+            25000,
+            25000,
+            25000,
+            15000,
+            30000,
+            25000,
+            15000,
+            25000,
+            25000
+          ],
+          "raw_reserve": [
+            4,
+            4,
+            4,
+            4,
+            3,
+            5,
+            4,
+            3,
+            4,
+            4
+          ],
+          "reasoning": "Aston Villa Women v Manchester United at Villa Park. Capacity is ~42,000. Assuming a moderate turnout for a WSL match, I will estimate 25,000 attendees."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 3.2,
+          "reserve_ci": 0.3,
+          "reserve_err": 1.2,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 3.2,
+          "est": 18200,
+          "est_ci": 2974,
+          "att_err_pct": 45.2,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            15000,
+            18000,
+            18000,
+            15000,
+            26000,
+            15000,
+            25000,
+            18000,
+            18000,
+            14000
+          ],
+          "raw_reserve": [
+            3,
+            3,
+            3,
+            3,
+            4,
+            3,
+            4,
+            3,
+            3,
+            3
+          ],
+          "reasoning": "Aston Villa Women vs Manchester United, Women's Super League, at Villa Park, is a credible draw but not a sellout; Villa Park is a large ground (~42.6k), and a WSL fixture of this type typically pulls a mid-five-figure crowd at most. I estimate about 15,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "Manchester United Women v Brighton, Women's Super League",
+      "venue": "Leigh Sports Village",
+      "capacity": 12000,
+      "sold_out": false,
+      "attendance": 4060,
+      "ideal": 1,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 9.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 2.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 2.0,
+          "est": 10200,
+          "est_ci": 0,
+          "att_err_pct": 151.2,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            10200
+          ],
+          "raw_reserve": [
+            2
+          ]
+        },
+        "gemini": {
+          "reserve": 2.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 1.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 2.0,
+          "est": 8000,
+          "est_ci": 0,
+          "att_err_pct": 97.0,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            8000,
+            8000,
+            8000,
+            8000,
+            8000,
+            8000,
+            8000,
+            8000,
+            8000,
+            8000
+          ],
+          "raw_reserve": [
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2,
+            2
+          ],
+          "reasoning": "Manchester United Women v Brighton at Leigh Sports Village (capacity ~12,000). Not sold out, so estimating 8,000 attendees. Scheduled at t=89s."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 1.4,
+          "reserve_ci": 0.37,
+          "reserve_err": 0.4,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 1.4,
+          "est": 6750,
+          "est_ci": 1362,
+          "att_err_pct": 66.3,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            9000,
+            6500,
+            3000,
+            7500,
+            6000,
+            9500,
+            6500,
+            5000,
+            6500,
+            8000
+          ],
+          "raw_reserve": [
+            2,
+            1,
+            1,
+            2,
+            1,
+            2,
+            1,
+            1,
+            1,
+            2
+          ],
+          "reasoning": "Manchester United Women v Brighton is a Women's Super League match at Leigh Sports Village, a mid-size football venue of roughly 12k capacity. United Women are the stronger draw and the match is not sold out, so I estimate about 9,000 attendees."
+        }
+      }
+    },
+    {
+      "name": "West Ham Women v Everton, Women's Super League",
+      "venue": "Chigwell Construction Stadium, Dagenham",
+      "capacity": 6078,
+      "sold_out": false,
+      "attendance": 614,
+      "ideal": 1,
+      "arms": {
+        "flat": {
+          "reserve": 10.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 9.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 10.0,
+          "est": null,
+          "est_ci": null,
+          "att_err_pct": null,
+          "engaged": null,
+          "n": 1
+        },
+        "formula": {
+          "reserve": 1.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 1.0,
+          "est": 5166,
+          "est_ci": 0,
+          "att_err_pct": 741.4,
+          "engaged": 1,
+          "n": 1,
+          "raw_est": [
+            5166
+          ],
+          "raw_reserve": [
+            1
+          ]
+        },
+        "gemini": {
+          "reserve": 1.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 1.0,
+          "est": 3778,
+          "est_ci": 339,
+          "att_err_pct": 515.3,
+          "engaged": 9,
+          "n": 10,
+          "raw_est": [
+            4000,
+            4000,
+            4000,
+            4000,
+            4000,
+            4000,
+            3000,
+            3000,
+            4000,
+            0
+          ],
+          "raw_reserve": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "reasoning": "West Ham Women v Everton at Chigwell Construction Stadium (capacity ~6,000). Not sold out, so I estimate 4,000 attendees. Scheduled for t=89s."
+        },
+        "gpt-5.4-mini": {
+          "reserve": 1.0,
+          "reserve_ci": 0.0,
+          "reserve_err": 0.0,
+          "benign": 1.0,
+          "benign_ci": 0.0,
+          "servers": 1.0,
+          "est": 2770,
+          "est_ci": 354,
+          "att_err_pct": 351.1,
+          "engaged": 10,
+          "n": 10,
+          "raw_est": [
+            2500,
+            2000,
+            2500,
+            2800,
+            3500,
+            3500,
+            2500,
+            2800,
+            3200,
+            2400
+          ],
+          "raw_reserve": [
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "reasoning": "West Ham Women v Everton is a modest Women's Super League draw at Chigwell Construction Stadium in Dagenham, and it is explicitly not sold out. A mid-sized crowd is plausible here, so I estimate about 2,500 attendees."
+        }
+      }
+    }
+  ],
+  "aggregate": {
+    "flat": {
+      "sold": {
+        "att_err_abs": null,
+        "reserve_err_abs": 2.8,
+        "benign": 0.903,
+        "servers": 10.0
+      },
+      "not_sold": {
+        "att_err_abs": null,
+        "reserve_err_abs": 5.71,
+        "benign": 1.0,
+        "servers": 10.0
+      },
+      "all": {
+        "att_err_abs": null,
+        "reserve_err_abs": 4.5,
+        "benign": 0.959,
+        "servers": 10.0
+      }
+    },
+    "formula": {
+      "sold": {
+        "att_err_abs": 2.3,
+        "reserve_err_abs": 0.2,
+        "benign": 1.0,
+        "servers": 9.0
+      },
+      "not_sold": {
+        "att_err_abs": 171.0,
+        "reserve_err_abs": 1.57,
+        "benign": 1.0,
+        "servers": 7.0
+      },
+      "all": {
+        "att_err_abs": 100.7,
+        "reserve_err_abs": 1.0,
+        "benign": 1.0,
+        "servers": 7.83
+      }
+    },
+    "gemini": {
+      "sold": {
+        "att_err_abs": 4.1,
+        "reserve_err_abs": 0.34,
+        "benign": 1.0,
+        "servers": 9.14
+      },
+      "not_sold": {
+        "att_err_abs": 114.9,
+        "reserve_err_abs": 1.61,
+        "benign": 0.969,
+        "servers": 6.24
+      },
+      "all": {
+        "att_err_abs": 68.8,
+        "reserve_err_abs": 1.08,
+        "benign": 0.982,
+        "servers": 7.45
+      }
+    },
+    "gpt-5.4-mini": {
+      "sold": {
+        "att_err_abs": 4.8,
+        "reserve_err_abs": 0.38,
+        "benign": 1.0,
+        "servers": 9.18
+      },
+      "not_sold": {
+        "att_err_abs": 80.1,
+        "reserve_err_abs": 1.06,
+        "benign": 0.99,
+        "servers": 6.43
+      },
+      "all": {
+        "att_err_abs": 48.8,
+        "reserve_err_abs": 0.78,
+        "benign": 0.994,
+        "servers": 7.58
+      }
+    }
+  }
+}

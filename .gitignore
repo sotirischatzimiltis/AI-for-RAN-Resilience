@@ -27,11 +27,14 @@ experiments/exp1_model_comparison/*
 !experiments/exp1_model_comparison/README.md
 !experiments/exp1_model_comparison/model_comparison.json
 
-# Exp 2 (system comparison): keep only the README and the blessed results JSON.
+# Exp 2 (system comparison): keep the README, blessed JSON, plot script, and figure.
 # Timestamped run outputs and logs are large and regenerable.
 experiments/exp2_system_comparison/*
 !experiments/exp2_system_comparison/README.md
 !experiments/exp2_system_comparison/system_comparison.json
+!experiments/exp2_system_comparison/plot_resilience.py
+!experiments/exp2_system_comparison/exp2_system_comparison.pdf
+!experiments/exp2_system_comparison/exp2_system_comparison.png
 
 # Exp 5 (compute contention): keep the README, the blessed results JSON, and any plot script.
 # Timestamped run outputs and logs are large and regenerable.
@@ -40,6 +43,16 @@ experiments/exp5_compute_contention/*
 !experiments/exp5_compute_contention/compute_contention.json
 !experiments/exp5_compute_contention/*.py
 
-# Other experiment outputs + local analysis plots — kept local for now
-experiments/exp3_reserve_sizing/
+# Exp 3 (reserve sizing): keep the README, blessed JSON, plot script, and the 10-seed figures.
+# Logs and the exploratory _5seed figures are regenerable and stay local.
+experiments/exp3_reserve_sizing/*
+!experiments/exp3_reserve_sizing/README.md
+!experiments/exp3_reserve_sizing/reserve_sizing.json
+!experiments/exp3_reserve_sizing/plot_reserve_sizing.py
+!experiments/exp3_reserve_sizing/exp3_reserve_sizing_forest.pdf
+!experiments/exp3_reserve_sizing/exp3_reserve_sizing_forest.png
+!experiments/exp3_reserve_sizing/exp3_reserve_sizing_scatter.pdf
+!experiments/exp3_reserve_sizing/exp3_reserve_sizing_scatter.png
+
+# Local analysis plots — kept local
 utility_plots/
