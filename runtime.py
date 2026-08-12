@@ -22,7 +22,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from sim.config import (
     SimConfig, open_ran_arch, RRCConfig,
     single_storm_traffic, single_ramp_traffic, multi_storm_flat_traffic,
-    multi_storm_ramp_traffic, mixed_storm_traffic, botnet_event_traffic, BENIGN_SURGE_IDX,
+    multi_storm_ramp_traffic, mixed_storm_traffic, botnet_event_traffic, event_surge_traffic,
+    BENIGN_SURGE_IDX,
 )
 from sim.simulator import StormSim
 from sim.metrics import UtilityParams
@@ -80,7 +81,9 @@ class SimHost:
         c_max:     int   = 16,
         rt_factor: float = 1.0,
         t_post:    float | None = None,   # override post-storm duration (single_storm only)
+        storm:     float | None = None,   # override surge peak (single_storm / event_heavy; Exp 5)
         compute_kappa:   float | None = None,  # shared-compute contention (None = off)
+        compute_slowdown: float = 0.5,         # contention severity a (Exp 5; used only when kappa set)
         provision_delay: float = 5.0,          # server warm-up delay (s); matches CFG-1 default. 0 = instant
         provision_parallel: bool = False,      # False = serial (one server per delay); True = all pending together
     ) -> str:
@@ -111,6 +114,17 @@ class SimHost:
             kw               = {"t_post": t_post} if t_post is not None else {}
             traffic          = single_ramp_traffic(**kw)
             self.t0, self.td = 50.0, 110.0
+        elif scenario == "event_heavy":
+            # Exp 5 Part B: a benign scheduled-event surge ONLY (no botnet), STEP onset, sized to a
+            # real crowd. `storm` overrides the surge peak (default = EXP1_EVENT's ~279 UEs/s). The
+            # judge reads the calendar, estimates the crowd, and pre-provisions the reserve ahead of
+            # the surge, entering the contention regime — then pays the contention cost.
+            surge            = storm if storm is not None else EXP1_EVENT.surge_peak()
+            traffic          = event_surge_traffic(surge_rate=surge, lead=140.0, surge_dur=60.0, post=60.0)
+            self.t0, self.td = 140.0, 200.0
+            t_event          = traffic.storm_windows()[0][0]     # onset of the (only) surge window
+            self.calendar    = [ScheduledEvent(t_event, EXP1_EVENT.name, "high",
+                                               EXP1_EVENT.venue, EXP1_EVENT.sold_out)]
         elif scenario in _MIXED_SCENARIOS:
             # one mixed scenario, four versions over two axes: onset step/ramp (step = calendar
             # is the only anticipation signal; ramp = forecast can fire too) x intensity
@@ -121,6 +135,8 @@ class SimHost:
             self.calendar    = scenario_calendar(scenario, traffic)
         else:
             kw               = {"t_post": t_post} if t_post is not None else {}
+            if storm is not None:            # Exp 5 Part B: benign step over the stability limit
+                kw["storm"] = storm
             traffic          = single_storm_traffic(**kw)
             self.t0, self.td = 50.0, 110.0
 
@@ -130,7 +146,7 @@ class SimHost:
             traffic=traffic,
             c0=2, c_max=c_max, seed=seed,
             realtime=True, rt_factor=rt_factor,
-            compute_kappa=compute_kappa,
+            compute_kappa=compute_kappa, compute_slowdown=compute_slowdown,
             server_provision_delay_s=provision_delay,
             parallel_provision=provision_parallel,
         )

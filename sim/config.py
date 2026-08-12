@@ -152,13 +152,20 @@ class SimConfig:
     realtime: bool = False
     rt_factor: float = 1.0
     # --- shared-compute contention (load-dependent processing time) ---
-    # vCU/vDU on a finite compute pool: PROCESSING time inflates by 1/(1 - rho_c), where
-    # rho_c = (busy workers)/compute_kappa. Propagation delay is unaffected.
-    #   compute_kappa = None -> contention OFF (recovers the paper's numbers)
-    #   compute_kappa = K    -> pool runs ~K attach-workers at full speed (use 40..60)
-    #   compute_rho_cap      -> clamp rho_c < 1 to avoid the infinite pole
+    # vCU/vDU on a finite compute pool of `compute_kappa` attach-workers. PROCESSING time inflates
+    # by the GENTLE dead-zone factor s(rho_c) of sim/contention.py, rho_c = busy/kappa. Propagation
+    # delay is unaffected.
+    #   compute_kappa = None    -> contention OFF (recovers the paper's numbers)
+    #   compute_kappa = c_max   -> pool sized to the max servers: rho_c is the fraction of the
+    #                              maximum capacity that is busy (the natural Exp 5 setting)
     compute_kappa: Optional[float] = None
-    compute_rho_cap: float = 0.98
+    compute_rho_cap: float = 0.98     # legacy (old pole model); unused by the bounded dead-zone model
+    # Gentle dead-zone contention model (Exp 5, sim/contention.py): processing time is flat below
+    # rho0 pool occupancy, then rises linearly, bounded at (1 + compute_slowdown). kappa=None = off.
+    compute_rho0: float = 0.65        # contention onset knee (no slowdown below this rho_c). 0.65 ~ 2/3:
+                                      # shared compute realistically contends from ~2/3 pool occupancy
+    compute_slowdown: float = 0.5     # severity a: max extra processing slowdown as the pool saturates
+                                      # (0.5 = a mild ~12% over-provisioning penalty, no backfire cliff)
     # --- server provisioning delay ---
     # Seconds to bring a new vDU/vCU online (image pull/boot/attach), one at a time;
     # scale-down is immediate. THE parameter that makes control non-trivial: at 0.0 capacity
@@ -177,10 +184,10 @@ class SimConfig:
         # rho_c is capped here, so cap >= 1 would divide by zero or go negative.
         if not (0.0 <= self.compute_rho_cap < 1.0):
             raise ValueError(f"compute_rho_cap must be in [0, 1) (got {self.compute_rho_cap})")
-        # SIM-7: kappa must exceed c_max, else rho_c hits the pole at full occupancy.
-        if self.compute_kappa is not None and self.compute_kappa <= self.c_max:
-            raise ValueError(f"compute_kappa ({self.compute_kappa}) must exceed c_max "
-                             f"({self.c_max}); use 40..60")
+        # The bounded dead-zone contention model has no pole, so kappa may equal c_max (the natural
+        # setting: rho_c = busy/c_max). Only require it to be positive.
+        if self.compute_kappa is not None and self.compute_kappa <= 0:
+            raise ValueError(f"compute_kappa ({self.compute_kappa}) must be positive (typically = c_max)")
         if not (0.0 <= self.benign_fp_alpha <= 1.0):
             raise ValueError(f"benign_fp_alpha must be in [0, 1] (got {self.benign_fp_alpha})")
         if self.c0 > self.c_max:

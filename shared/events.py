@@ -17,8 +17,11 @@ import math
 from dataclasses import dataclass
 
 NORMAL_LAM   = 20.0     # calm cell baseline (UEs/s), same as the sim scenarios
-SURGE_DIVISOR = 300.0   # attendance -> peak surge (UEs/s); calibration constant (cell-share x
-                        # 1/peak-window) mapping real crowds onto the sim scale. See the doc.
+SURGE_DIVISOR = 300.0   # attendance -> peak surge (UEs/s). Calibration lam_ben^pk = phi*N/T_pk with
+                        # phi~0.2 (one operator's active share on the modeled cell) and T_pk~60s (peak
+                        # reconnection window) => 1/300. It maps BOTH ground truth and every arm's
+                        # estimate into a reserve, so it cancels from the comparison and only sets the
+                        # absolute load scale (fixed so the largest events approach c_max*mu). See eq:crowd-load.
 MU_DEFAULT   = 28.7     # per-server service rate (UEs/s) for standalone reserve math
 RHO_TARGET   = 0.8      # target utilisation the reserve is sized to. Sizing to bare capacity
                         # (rho=1) leaves NO headroom: a queue at rho->1 has exploding delay, so

@@ -41,6 +41,7 @@ experiments/exp2_system_comparison/*
 experiments/exp5_compute_contention/*
 !experiments/exp5_compute_contention/README.md
 !experiments/exp5_compute_contention/compute_contention.json
+!experiments/exp5_compute_contention/exp5_envelope.json
 !experiments/exp5_compute_contention/*.py
 
 # Exp 3 (reserve sizing): keep the README, blessed JSON, plot script, and the 10-seed figures.

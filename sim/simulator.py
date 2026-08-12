@@ -24,6 +24,7 @@ import simpy
 import simpy.rt
 
 from .config import SimConfig
+from .contention import ContentionModel
 
 @dataclass # this is what controllers consume/observe each time step
 class TelemetrySample:
@@ -116,6 +117,8 @@ class StormSim:
         # propagation component is fixed link physics and does not.
         self._proc_s = cfg.arch.proc_total_ms / 1000.0
         self._prop_s = (cfg.arch.n_ctrl_messages * cfg.arch.oneway_delay_ms) / 1000.0
+        # shared-compute contention (Exp 5); None when kappa unset -> base service time (Exp 1-4)
+        self._contention = ContentionModel.from_cfg(cfg)
         # Wake signals for the two loops that park when idle. A SimPy event is single-use,
         # so each is fired with .succeed() then immediately replaced with a fresh one (see
         # _signal / set_servers) — that fire-and-replace is what makes it reusable.
@@ -304,15 +307,13 @@ class StormSim:
 
     def _service_time(self) -> float: # compute the service time for an attempt, considering contention and propagation delays
         """Mean-exponential service time. With shared-compute contention on, the PROCESSING
-        component inflates by the processor-sharing factor 1/(1 - rho_c), rho_c = busy/kappa;
-        the propagation component is fixed link physics."""
-        kappa = self.cfg.compute_kappa # get the compute capacity (kappa) from the configuration
-        if kappa is None or kappa <= 0: # if compute capacity is not set or is non-positive, use the base service time without contention
-            mean = self._svc_time_s # use the base service time without contention
-        else: 
-            rho_c = min(self.busy / kappa, self.cfg.compute_rho_cap) # compute the processor-sharing factor (rho_c) based on the number of busy servers and the compute capacity, capped at compute_rho_cap
-            proc_eff = self._proc_s / (1.0 - rho_c) # compute the effective processing time considering contention
-            mean = proc_eff + self._prop_s # total mean service time is the sum of the effective processing time and the fixed propagation time
+        component inflates by the gentle dead-zone factor s(rho_c) of sim/contention.py (flat below
+        the rho0 knee, then bounded-linear); the propagation component is fixed link physics.
+        kappa=None recovers the base (Exp 1-4) service time."""
+        if self._contention is None:                       # contention off (kappa unset) -> base time
+            mean = self._svc_time_s
+        else:
+            mean = self._contention.service_time(self.busy)  # slowed processing + fixed propagation
         return self.rng_service.expovariate(1.0 / mean) # sample the actual service time from an exponential distribution with the computed mean service time
 
     # -- telemetry sampling  get the current values for the sample---------------------------------------
