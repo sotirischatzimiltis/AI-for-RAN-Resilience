@@ -54,14 +54,22 @@ SYSTEM_PROMPT = (_PROMPTS_DIR / "orchestrator.md").read_text()
 
 # priority -> (V, W) when the operator gives no explicit weights.
 # Normalised O(1) scale (after CTL-2): nominal V=1 load-tracks; V~20 over-provisions.
+# The preset IS the full posture. The controller's utility response is a THRESHOLD near the V~10
+# knee (only a strong weight materially over-provisions; see exp6_posture), so the dynamics realise
+# just two levels: a plain OR maximal QoS ask -> the full preset (20); a hedged/mild ask tempers
+# BELOW it via an explicit intermediate weight (~6). Symmetric so qos and cost mirror each other.
 PRIORITY_VW = {
-    "qos":      (20.0, 1.0),     # favour service: provision more (high V)
-    "cost":     (1.0, 5.0),      # favour efficiency: fewer servers (high W)
+    "qos":      (20.0, 1.0),     # favour service: full over-provision
+    "cost":     (1.0, 20.0),     # favour efficiency: full under-provision, mirror of qos
     "balanced": (1.0, 1.0),      # the default posture: load-tracking
 }
 
 
 class OperatorDirective(BaseModel):
+    # reasoning FIRST: field order is generation order, so the model plans the clause->lever
+    # breakdown before it commits to any lever below (chain-of-thought, not a post-hoc caption).
+    reasoning: str = Field(description="Reason FIRST, before the fields below: split the intent into "
+                    "clauses and name the lever each maps to, or 'none' for a context/courtesy clause")
     priority: Literal["qos", "cost", "balanced"] = Field(
         description="Network posture: 'qos' favours service (more servers), 'cost' favours "
                     "efficiency (fewer), 'balanced' is neutral. Use 'balanced' if the intent "
@@ -77,18 +85,27 @@ class OperatorDirective(BaseModel):
         description="Label of a KNOWN upcoming load event named in the intent; else null")
     schedule_event_t: float | None = Field(default=None, ge=0.0,
         description="Simulated time (s) the scheduled event begins; else null")
-    schedule_event_severity: Literal["low", "medium", "high"] = Field(default="high",
-        description="Expected load of the scheduled event")
+    schedule_event_venue: str | None = Field(default=None,
+        description="The venue or place if the intent names one (e.g. 'Wembley', 'the downtown arena'), "
+                    "which the site judge uses to size the crowd. Null when no place is named. Set it "
+                    "only for an event you are also scheduling (name and time both present).")
+    schedule_event_sold_out: bool | None = Field(default=None,
+        description="Tri-state sell-out status, a strong cue for the crowd size. True ONLY if the intent "
+                    "says it is sold out or at capacity. False ONLY if the intent says it is NOT sold out. "
+                    "Null when the intent does not mention it. Do NOT write False just because sell-out "
+                    "was not mentioned: unstated is null, not False. Set it only alongside a scheduled event.")
     nonrt_instruction: str | None = Field(default=None,
-        description="If the intent is operational nuance for the SITE JUDGE rather than a "
+        description="If the intent is operational nuance for the SITE AGENT rather than a "
                     "posture change — e.g. 'tonight's surge is a legitimate flash crowd, do "
                     "not treat high load alone as an attack' — put a concise standing "
-                    "instruction here for the Non-RT storm judge; else null")
-    reasoning: str = Field(description="One sentence: how this serves the operator's intent")
+                    "instruction here for the Non-RT Agent; else null")
 
 
-def build_orchestrator_agent(model) -> Agent:
-    return Agent(model=model, output_type=OperatorDirective, system_prompt=SYSTEM_PROMPT)
+def build_orchestrator_agent(model, system_prompt: str | None = None) -> Agent:
+    """Build the operator-intent agent. `system_prompt` overrides the on-disk prompt so a
+    prompt-variant comparison can hold two versions in one process (mirrors build_non_rt_agent)."""
+    return Agent(model=model, output_type=OperatorDirective,
+                 system_prompt=system_prompt or SYSTEM_PROMPT)
 
 
 async def route_intent(
@@ -122,7 +139,8 @@ async def route_intent(
 
     if d.schedule_event_name and d.schedule_event_t is not None:
         sim_host.calendar.append(ScheduledEvent(
-            t_start=d.schedule_event_t, name=d.schedule_event_name, severity=d.schedule_event_severity))
+            t_start=d.schedule_event_t, name=d.schedule_event_name,
+            venue=d.schedule_event_venue or "", sold_out=d.schedule_event_sold_out))
         actions.append(f"scheduled '{d.schedule_event_name}'@t={d.schedule_event_t:.0f}s")
 
     # --- branch B: delegate a standing instruction to the Non-RT judge ---
@@ -284,7 +302,11 @@ async def run_episode(
             final_P   = rm["P_episode"]
             per_storm = [round(s["P"], 4) for s in rm["per_storm"]]
             per_storm_block = per_storm_blocked(sim_host.sim.telemetry, storms)
-        except Exception:
+        except Exception as e:
+            # A metric crash must not masquerade as a genuine P=0 episode: log it loudly.
+            # The 0.0 return is kept so the four other run_episode callers still get a float.
+            print(f"[Orchestrator] WARNING resilience_multi failed ({type(e).__name__}: {e}); "
+                  f"final_P defaulted to 0.0 — treat this episode's P as MISSING, not zero.")
             final_P = 0.0
             per_storm_block = []
 

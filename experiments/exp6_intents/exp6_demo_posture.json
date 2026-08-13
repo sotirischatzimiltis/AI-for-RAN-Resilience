@@ -1,0 +1,107 @@
+{
+  "demo": "posture",
+  "scenario": "single_ramp",
+  "lever": "intent -> network posture V/W (over-provision)",
+  "intent": "Tonight is a major product launch. Protect service quality and spare no capacity.",
+  "directive": "policy(priority=qos, V=20, W=1.00)  \u2014 \u201cTonight is a major product launch\u201d names an upcoming load event -> schedule_event_name='major product launch' and, since no time or venue is given, no scheduling time/venue is set. \u201cProtect service quality\u201d and \u201cspare no capacity\u201d both request maximum service protection -> priority='qos'.",
+  "judge": [
+    "assessment=1  storm=False  drop=0.00  (2.3s)  LATEST lam is equal to the resting baseline (~20 UEs/s) and flat over the window, with retry-rate at 0 and queue essentially flat, so this is not an elevated unexplained surge. Absorption is very high (0.996), confirming the current policy is holding steady, so no storm filter or pre-provisioning change is needed.",
+    "assessment=12  storm=True  drop=0.88  tighten(V=20)  (2.7s)  LATEST lam is 200 UEs/s versus a ~20 UEs/s resting baseline and the window is still rising, while the forecast projects ~270 UEs/s with high confidence; the flat queue/retry are downstream and do not negate the arriving flood. No calendar event is scheduled, so this is unexplained traffic and should be treated as a malicious storm with strong filtering; absorption is only ~0.70, so keep capacity maxed rather than easing off.",
+    "assessment=21  storm=False  drop=0.00  (2.2s)  LATEST lam is flat at the resting baseline (~20 UEs/s), with no rise in arrivals and zero retries, so there is no elevated load and no storm signal. Absorption is at 1.0 and recovered=true, consistent with calm operation; no pre-provisioning trigger is present."
+  ],
+  "outcome": {
+    "benign": {
+      "baseline": 0.255,
+      "intent": 0.9647,
+      "delta": 0.7097
+    },
+    "benign_fp": {
+      "baseline": 0.1584,
+      "intent": 0.0353,
+      "delta": -0.1231
+    },
+    "P": {
+      "baseline": 0.7359,
+      "intent": 0.9229,
+      "delta": 0.187
+    },
+    "servers": {
+      "baseline": 3.051,
+      "intent": 3.5743,
+      "delta": 0.5233
+    }
+  },
+  "trace_text": "============================================================================================\nEND-TO-END INTERACTION   demo=posture  (single_ramp)   intent -> network posture V/W (over-provision)\n============================================================================================\nOPERATOR INTENT\n  Tonight is a major product launch. Protect service quality and spare no capacity.\n\nORCHESTRATOR  (directive + reasoning)\n  policy(priority=qos, V=20, W=1.00)  \u2014 \u201cTonight is a major product launch\u201d names an upcoming load event -> schedule_event_name='major product launch' and, since no time or venue is given, no scheduling time/venue is set. \u201cProtect service quality\u201d and \u201cspare no capacity\u201d both request maximum service protection -> priority='qos'.\n\nNON-RT JUDGE  (assessments: first / mid / last)\n  - assessment=1  storm=False  drop=0.00  (2.3s)  LATEST lam is equal to the resting baseline (~20 UEs/s) and flat over the window, with retry-rate at 0 and queue essentially flat, so this is not an elevated unexplained surge. Absorption is very high (0.996), confirming the current policy is holding steady, so no storm filter or pre-provisioning change is needed.\n  - assessment=12  storm=True  drop=0.88  tighten(V=20)  (2.7s)  LATEST lam is 200 UEs/s versus a ~20 UEs/s resting baseline and the window is still rising, while the forecast projects ~270 UEs/s with high confidence; the flat queue/retry are downstream and do not negate the arriving flood. No calendar event is scheduled, so this is unexplained traffic and should be treated as a malicious storm with strong filtering; absorption is only ~0.70, so keep capacity maxed rather than easing off.\n  - assessment=21  storm=False  drop=0.00  (2.2s)  LATEST lam is flat at the resting baseline (~20 UEs/s), with no rise in arrivals and zero retries, so there is no elevated load and no storm signal. Absorption is at 1.0 and recovered=true, consistent with calm operation; no pre-provisioning trigger is present.\n\nOUTCOME   baseline -> +intent\n  benign     0.255 -> 0.965   (+0.710)\n  benign FP  0.158 -> 0.035   (-0.123)\n  P          0.736 -> 0.923   (+0.187)\n  servers    3.051 -> 3.574   (+0.523)\n============================================================================================",
+  "results": {
+    "baseline": {
+      "agg": {
+        "P": 0.7359,
+        "P_ci": 0.0074,
+        "benign": 0.255,
+        "benign_ci": 0.0076,
+        "servers": 3.051,
+        "servers_ci": 0.0696,
+        "benign_fp": 0.1584,
+        "benign_fp_ci": 0.0085
+      },
+      "rows": [
+        {
+          "P": 0.7325,
+          "benign": 0.2491,
+          "servers": 2.982,
+          "benign_fp": 0.1621,
+          "intents_routed": 0
+        },
+        {
+          "P": 0.7317,
+          "benign": 0.2537,
+          "servers": 3.1,
+          "benign_fp": 0.1633,
+          "intents_routed": 0
+        },
+        {
+          "P": 0.7434,
+          "benign": 0.2623,
+          "servers": 3.071,
+          "benign_fp": 0.1497,
+          "intents_routed": 0
+        }
+      ]
+    },
+    "intent": {
+      "agg": {
+        "P": 0.9229,
+        "P_ci": 0.0001,
+        "benign": 0.9647,
+        "benign_ci": 0.0044,
+        "servers": 3.5743,
+        "servers_ci": 0.0033,
+        "benign_fp": 0.0353,
+        "benign_fp_ci": 0.0044
+      },
+      "rows": [
+        {
+          "P": 0.923,
+          "benign": 0.9671,
+          "servers": 3.576,
+          "benign_fp": 0.0329,
+          "intents_routed": 1
+        },
+        {
+          "P": 0.923,
+          "benign": 0.9669,
+          "servers": 3.576,
+          "benign_fp": 0.0331,
+          "intents_routed": 1
+        },
+        {
+          "P": 0.9228,
+          "benign": 0.9602,
+          "servers": 3.571,
+          "benign_fp": 0.0398,
+          "intents_routed": 1
+        }
+      ]
+    }
+  }
+}

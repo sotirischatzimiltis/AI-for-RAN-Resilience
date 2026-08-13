@@ -107,6 +107,8 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 | `exp_3_reserve_sizing.py` | **Exp 3: reserve sizing** — flat rule vs formula rule vs LLM on the event portfolio (attendance estimation; Non-RT justification) |
 | `exp_4_V_W_tuning.py` | **Exp 4: V/W × provisioning-delay** sweep (no LLM). PURE CAPACITY study on two benign onset shapes — `single_storm` (STEP) vs `single_ramp` (RAMP) — no filter. Shows a step at a realistic delay caps P and V/W tuning can't recover it, while a ramp is trackable so tuning still works. resilience–cost Pareto |
 | `exp_5_compute_contention.py` | **Exp 5 Part B: compute-contention arm comparison** — reuses the Exp-2 arm set + metric decomposition on a benign scheduled-event surge (`event_heavy`, the Exp-1 crowd ~279 UEs/s the judge pre-provisions for; a botnet would be filtered and never fill the pool). Sweeps contention SEVERITY `a∈{0.5,0.75,1.0}` OFF vs ON at `kappa=c_max`. As `a` rises the stability cliff drops below the surge, so the judge's correct nominal-sized reserve is eroded and benign QoS collapses. Standalone: does NOT change Exp 1-4. `--no-llm` for the free deterministic preview (Static c=16 = pre-provisioned proxy). Part A (the envelope) lives under `experiments/exp5_compute_contention/` |
+| `exp_6_intents.py` | **Exp 6 Part A: operator-intent grounding** — scores the orchestrator turning free-text intents into `OperatorDirective` over the 40-intent held-out portfolio (`shared/operator_intents.py`); per-lever scorer (posture DIRECTION, graded WEIGHT band, floor exact, schedule ±60s, delegation presence), grounding + exact-match, 3 seeds n=120, `--baseline null\|keyword\|both` floors + provenance block. Blessed `grounding_blessed.json`; table via `experiments/exp6_intents/exp6_grounding_table.py` |
+| `exp_6_demo.py` | **Exp 6 end-to-end demo** — one QoS-posture intent through the full live loop (route_intent → MCP judge → fast loop) on `single_ramp`, baseline vs +intent; parses its own log into an Operator→Orchestrator→Judge trace + metrics saved to `exp6_demo_posture.json`. Reserve demo kept in-file (`_RESERVE_DEMO`) but DROPPED from the paper |
 | `ablation.py` | mechanism knockouts (forecast/calendar/learning). **RETIRED from the paper (2026-08-11)** — Exp 2 isolates anticipation, Exp 3 the calendar, Exp 7 the memory, so a standalone ablation mostly re-proves them. Kept as a diagnostic; de-numbered (was `exp_5_ablation.py`) |
 | `learning_curve.py`, `learning_demo.py` | **Exp 7:** memory / evolution (cross-episode learning) |
 
@@ -115,6 +117,8 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 |---|---|
 | `experiments/exp3_reserve_sizing/plot_reserve_sizing.py` | Exp 3 forest + scatter (attendance estimate vs truth) |
 | `experiments/exp4_vw_tuning/plot_vw_tuning.py` | Exp 4 delay-lines / heatmaps / Pareto (moved here from `scripts/` 2026-08-11) |
+| `experiments/exp6_intents/exp6_grounding_table.py` | Exp 6 grounding LaTeX table (`tab:intent_grounding`) from `grounding_blessed.json`; `exp6_grounding.py` = alt bar chart, UNUSED (paper is table-only) |
+| `experiments/exp6_intents/exp6_posture.py` | Exp 6 posture-effect sweep — DROPPED from the paper (kept for reference) |
 
 ## Runtime notes
 - **Interpreter:** use `/Users/admin/miniforge3/envs/pydantic-ai-env/bin/python` (pydantic-ai 1.70). The repo `.venv` has an OLD pydantic-ai that breaks MCP imports.
@@ -126,5 +130,6 @@ isolating raw model judgment) is **retired** — its script, prompt, and results
 - **Exp 3** — event-portfolio reserve sizing (attendance estimation vs flat/formula rules)
 - **Exp 4** — V/W × provisioning-delay sweep on benign step vs ramp (resilience–cost Pareto)
 - **Exp 5** — compute contention (VI-E). Part A = resilience ENVELOPE vs storm intensity, dedicated vs shared pool, NO LLM (`experiments/exp5_compute_contention/exp5_envelope.py`, cached figure). Part B = arm comparison on a benign pre-provisioned event, off vs a=1.0 with LLM (`scripts/exp_5_compute_contention.py`); figure from the checkpoint via `experiments/exp5_compute_contention/exp5_partb.py`. Paper uses GPT-5.4-Mini only (gemini under-estimates + commits late)
-- **Exp 6** — operator intents + multi-site coordination · **Exp 7** — memory / evolution
+- **Exp 6** — operator intents (VI-F): Part A grounding table + end-to-end demo (`scripts/exp_6_intents.py`, `exp_6_demo.py`). GPT-5.4-Mini + Gemini both reported; two-level strength ladder at preset (20,1)/(1,20)
+- **Future Work** — multi-site fan-out (A2A) AND memory/evolution (`learning_curve.py`, `learning_demo.py`) both deferred, NOT run for the draft
 - ~~mechanism ablation~~ **dropped** from the paper (kept as `scripts/ablation.py` diagnostic)

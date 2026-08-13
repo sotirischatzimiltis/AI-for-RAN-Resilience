@@ -1,0 +1,18 @@
+\begin{table}[t]
+\centering
+\caption{Operator-intent grounding on 40 held-out intents, 3 seeds and $n{=}120$ per model. Two LLM agents above the rule, a keyword matcher and a do-nothing floor below. Overall best in bold.}
+\label{tab:intent_grounding}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{lccccccc}
+\toprule
+ & Ground. & Exact & Posture & Weight & Floor & Sched. & Deleg. \\
+\midrule
+GPT-5.4-Mini & \textbf{0.984} & \textbf{0.942} & 0.98 & 1.00 & 0.99 & 1.00 & 0.96 \\
+Gemini-3.1-FL & 0.971 & 0.875 & 0.93 & 0.92 & 1.00 & 0.97 & 1.00 \\
+\midrule
+Keyword & 0.843 & 0.525 & 0.65 & 0.25 & 0.95 & 1.00 & 0.95 \\
+Null & 0.663 & 0.050 & 0.35 & 0.00 & 0.82 & 0.85 & 0.82 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}

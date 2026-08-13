@@ -55,5 +55,14 @@ experiments/exp3_reserve_sizing/*
 !experiments/exp3_reserve_sizing/exp3_reserve_sizing_scatter.pdf
 !experiments/exp3_reserve_sizing/exp3_reserve_sizing_scatter.png
 
+# Exp 6 (operator intents): keep the scripts, the blessed grounding result, the end-to-end demo
+# result, and the grounding LaTeX table. Timestamped runs, logs, figures, and the dropped reserve
+# demo are regenerable and stay local.
+experiments/exp6_intents/*
+!experiments/exp6_intents/*.py
+!experiments/exp6_intents/grounding_blessed.json
+!experiments/exp6_intents/exp6_demo_posture.json
+!experiments/exp6_intents/exp6_grounding_table.tex
+
 # Local analysis plots — kept local
 utility_plots/
