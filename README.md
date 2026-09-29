@@ -16,7 +16,7 @@ A signaling storm occurs when a burst of UE attach requests overwhelms the contr
 ## Architecture — three-tier agentic design
 
 <p align="center">
-  <img src="Framework_Architecture.png" alt="Three-tier agentic resilience framework" width="620">
+  <img src="Framework_Architecture.png?v=2" alt="Three-tier agentic resilience framework" width="620">
 </p>
 
 A network operator issues intents to an **SMO Agentic AI Coordinator**; a **per-site Non-RT LLM agent** (the storm judge) reads telemetry through MCP tools (episode stats, short-term forecast, scheduled-event calendar), writes a **shared policy**, and carries **cross-episode memory**; and a **deterministic Near-RT fast loop** enforces the result (optimal server count + malicious-UE drop) with no LLM on the tick. In code these map to three actors above the fast loop:
