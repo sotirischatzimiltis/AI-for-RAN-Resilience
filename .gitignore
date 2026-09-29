@@ -68,3 +68,6 @@ experiments/exp6_intents/*
 
 # Local analysis plots — kept local
 utility_plots/
+
+# Internal working notes (kept locally, not tracked)
+docs/
