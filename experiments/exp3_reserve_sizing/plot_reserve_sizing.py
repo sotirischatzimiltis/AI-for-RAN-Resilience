@@ -153,7 +153,7 @@ def forest(d, arms, n=None):
 # ------------------------------------- scatter ------------------------------------------------
 def scatter(d, arms, n=None):
     records = d["records"]
-    fig, ax = plt.subplots(figsize=(3.5, 3.2), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(3.4, 2.5), constrained_layout=True)
 
     lim = (0.4, 100)
     # Non-uniform axis: the low decade [0.4,10]k gets one third of the span, the CROWDED
@@ -191,8 +191,8 @@ def scatter(d, arms, n=None):
     ax.set_xscale("function", functions=(_fwd, _inv))
     ax.set_yscale("function", functions=(_fwd, _inv))
     ax.set_xlim(*lim); ax.set_ylim(*lim)
-    ax.set_xlabel("True attendance (thousands)")
-    ax.set_ylabel("Estimated attendance (thousands)")
+    ax.set_xlabel(r"True attendance ($\times 10^3$)")
+    ax.set_ylabel(r"Estimated attendance ($\times 10^3$)")
     for axis in (ax.xaxis, ax.yaxis):                    # plain labels; extra tick at 30 in the wide decade
         axis.set_major_locator(mticker.FixedLocator([1, 10, 30, 100]))
         axis.set_major_formatter(mticker.FuncFormatter(lambda v, _: f"{v:g}"))

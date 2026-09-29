@@ -100,7 +100,7 @@ def _plot(data: dict) -> None:
 
     loads = data["loads"]
     for s in data["series"]:
-        m, ci = np.array(s["mean"]), np.array(s["ci"])
+        m, ci = np.array(s["mean"]) * 100, np.array(s["ci"]) * 100   # report P as a percentage
         lab = "No contention" if s["kappa"] is None else fr"Shared pool $a{{=}}{s['a']:.1f}$"
         ax.plot(loads, m, "-o", color=s["colour"], ms=2.4, lw=1.4, label=lab, zorder=3)
         ax.fill_between(loads, m - ci, m + ci, color=s["colour"], alpha=0.15, lw=0, zorder=1)
@@ -110,9 +110,9 @@ def _plot(data: dict) -> None:
         ax.axvline(x, ls="--", color=col, lw=0.9, alpha=0.7, zorder=2)
 
     ax.set_xlabel(r"Storm intensity $\lambda$ (UEs/s)")
-    ax.set_ylabel(r"Resilience $P$")
+    ax.set_ylabel(r"Resilience $P$ (%)")
     ax.set_xlim(min(loads) - 5, max(loads) + 5)
-    ax.set_ylim(0.5, 1.02)
+    ax.set_ylim(50, 102)
     ax.grid(alpha=0.3, lw=0.4)
     ax.legend(loc="lower left", frameon=True, framealpha=0.95, handlelength=1.8,
               borderpad=0.4, labelspacing=0.3)

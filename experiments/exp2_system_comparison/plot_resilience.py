@@ -46,25 +46,26 @@ fig, ax = plt.subplots(figsize=(3.5, 2.5), constrained_layout=True)
 for j, (_, mkey, colr, hatch) in enumerate(WINDOWS):
     for i, (_, skey) in enumerate(SYSTEMS):
         xpos = x[i] + (j - 0.5) * bar_width
-        val = mean(skey, mkey)
+        val = mean(skey, mkey) * 100          # report as a percentage
         ax.bar(xpos, val, width=bar_width, hatch=hatch, color=colr,
                edgecolor="black", linewidth=0.3, zorder=3)
-        ax.text(xpos, val + 0.012, f"{val:.2f}", ha="center", va="bottom",
-                fontsize=5.4, rotation=45, zorder=4, clip_on=False)
+        ax.text(xpos + 0.06, val + 1.2, f"{val:.1f}%", ha="center", va="bottom",
+                fontsize=5.4, rotation=60, zorder=4, clip_on=False)
 
 ax.set_xticks(x)
 ax.set_xticklabels([lbl for lbl, _ in SYSTEMS], rotation=30, ha="right",
                    rotation_mode="anchor")
-ax.set_ylabel("Resilience")
-ax.set_ylim(0.4, 1.14)   # headroom so the ~0.99 value labels clear the top border
-ax.set_yticks(np.arange(0.4, 1.01, 0.2))
+ax.set_ylabel(r"Resilience $P$ (%)")
+ax.set_ylim(40, 114)   # headroom so the ~99 value labels clear the top border
+ax.set_yticks(np.arange(40, 101, 20))
 ax.grid(axis="y", linestyle="--", linewidth=0.4, zorder=0)
 ax.set_axisbelow(True)
 
 handles = [mpatches.Patch(hatch=w[3], facecolor=w[2], edgecolor="black", label=w[0])
            for w in WINDOWS]
-fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False,
-           handlelength=1.5, columnspacing=1.4, bbox_to_anchor=(0.5, -0.06))
+ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.425, -0.3), ncol=2,
+          frameon=True, framealpha=0.95, edgecolor="0.5", handlelength=1.5,
+          columnspacing=1.4, borderpad=0.4)
 
 for name in ["exp2_system_comparison.pdf", "exp2_system_comparison.png"]:
     fig.savefig(os.path.join(OUTPUT_DIR, name), bbox_inches="tight", dpi=300)

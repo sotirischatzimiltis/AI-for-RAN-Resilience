@@ -38,24 +38,25 @@ for gi, (arm, _) in enumerate(_ARMS):
         c = d[lvl][arm]
         x = gi + (li - 0.5) * W
         hatch = "////" if lvl != "off" else None            # hatch the contended bars for grayscale
-        ax.bar(x, c["P_mean"], W, yerr=c["P_ci95"], color=col, edgecolor="black", lw=0.5,
+        ax.bar(x, c["P_mean"] * 100, W, yerr=c["P_ci95"] * 100, color=col, edgecolor="black", lw=0.5,
                hatch=hatch, error_kw=dict(lw=0.7, capsize=2),
                label=_LEVELS[li][1] if gi == 0 else None, zorder=3)
         if lvl != "off":                                    # dP annotation above the contended bar + CI
-            ax.annotate(f"$\\Delta P$ = {c['P_mean'] - p_off:.2f}", (x, c["P_mean"] + c["P_ci95"]),
+            ax.annotate(f"$\\Delta P$ = {(c['P_mean'] - p_off) * 100:.0f}",
+                        (x, (c["P_mean"] + c["P_ci95"]) * 100),
                         textcoords="offset points", xytext=(0, 3), ha="center", fontsize=7)
 
 # constant-reserve headline for the agentic arm (boxed so it is legible in colour AND grayscale)
 r_off = d["off"]["Agentic (gpt-5.4-mini)"].get("reserve_est_mean")
 r_on  = d["a=1"]["Agentic (gpt-5.4-mini)"].get("reserve_est_mean")
 if r_off and r_on:
-    ax.text(1, 0.60, "reserve $\\approx 13$\n(both levels)", ha="center", va="center", fontsize=6.8,
+    ax.text(1, 60, "reserve $\\approx 13$\n(both levels)", ha="center", va="center", fontsize=6.8,
             color="0.1", bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="0.6", lw=0.4))
 
-ax.set_ylabel(r"Resilience $P$")
+ax.set_ylabel(r"Resilience $P$ (%)")
 ax.set_xticks(range(len(_ARMS)))
 ax.set_xticklabels([lbl for _, lbl in _ARMS])
-ax.set_ylim(0.5, 1.0)
+ax.set_ylim(50, 100)
 ax.grid(axis="y", alpha=0.3, lw=0.4)
 ax.legend(loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=2, frameon=False,
           handlelength=1.4, borderpad=0.3, columnspacing=1.2)
