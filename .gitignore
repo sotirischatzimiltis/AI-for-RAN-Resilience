@@ -20,6 +20,8 @@ results/
 
 # Exp run logs (large; regenerable) — keep the json/png/tex, drop the logs
 experiments/exp4_vw_tuning/logs/
+experiments/exp7_cascading/logs/
+experiments/exp8_multisite/logs/
 
 # Exp 1 (model comparison): keep only the README and the blessed results JSON.
 # Timestamped run outputs, logs, and per-episode reasoning/util traces are large and regenerable.
