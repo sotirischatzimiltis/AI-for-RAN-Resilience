@@ -1,0 +1,129 @@
+{
+  "seed": 1,
+  "sites": {
+    "stadium": {
+      "scenario": "llm_compare",
+      "kappa": 16.0,
+      "a": 1.0,
+      "description": "high-density small cell at a stadium, serves event egress (e.g. Wembley); exposed to both botnet storms and legitimate crowd surges",
+      "metrics": {
+        "P": 0.8744,
+        "benign": 0.9997320471596999,
+        "benign_fp": 0.0002679528403001072,
+        "blocked": 0.9167225763166723,
+        "servers": 5.28
+      },
+      "final_posture": "Policy: storm_active=False, malicious_drop_prob=0.00, queue_hold_threshold=10, lyapunov_V=1.0, lyapunov_W=1.00, reserve_servers=11, event_time=240s, last Non-RT update 2s ago. Operator override: V=20.0, W=1.0, min_servers=1."
+    },
+    "residential": {
+      "scenario": "single_ramp",
+      "kappa": null,
+      "a": 0.5,
+      "description": "macro cell over a residential district; gentle benign demand, no scheduled events",
+      "metrics": {
+        "P": 0.6724,
+        "benign": 0.38235294117647056,
+        "benign_fp": 0.12143141681051653,
+        "blocked": 0.0,
+        "servers": 1.73
+      },
+      "final_posture": "Policy: storm_active=False, malicious_drop_prob=0.00, queue_hold_threshold=10, lyapunov_V=1.0, lyapunov_W=1.00, reserve_servers=1, last Non-RT update 2s ago. Operator override: V=1.0, W=20.0, min_servers=1."
+    },
+    "business": {
+      "scenario": "single_storm",
+      "kappa": null,
+      "a": 0.5,
+      "description": "small cell in the business district; bursty but benign daytime load",
+      "metrics": {
+        "P": 0.6821,
+        "benign": 0.33746668211843783,
+        "benign_fp": 0.12069764746784101,
+        "blocked": 0.0,
+        "servers": 3.29
+      },
+      "final_posture": "Policy: storm_active=False, malicious_drop_prob=0.00, queue_hold_threshold=10, lyapunov_V=1.0, lyapunov_W=1.00, reserve_servers=1, last Non-RT update 0s ago. Operator override: V=1.0, W=1.0, min_servers=3."
+    }
+  },
+  "routing": [
+    {
+      "t_wall": 19.7,
+      "intent": "It's a quiet Tuesday night \u2014 cut cost across the whole fleet.",
+      "reasoning": "The intent is fleet-wide: \u201ccut cost across the whole fleet\u201d maps to a cost posture on every site. \u201cIt\u2019s a quiet Tuesday night\u201d is context/courtesy only and does not add a separate lever. No floor, event, or delegation clauses are present.",
+      "conflict": null,
+      "misrouted": [],
+      "directives": [
+        {
+          "site_id": "stadium",
+          "priority": "cost",
+          "V": null,
+          "W": null,
+          "min_servers": null,
+          "schedule": null,
+          "nonrt": false
+        },
+        {
+          "site_id": "residential",
+          "priority": "cost",
+          "V": null,
+          "W": null,
+          "min_servers": null,
+          "schedule": null,
+          "nonrt": false
+        },
+        {
+          "site_id": "business",
+          "priority": "cost",
+          "V": null,
+          "W": null,
+          "min_servers": null,
+          "schedule": null,
+          "nonrt": false
+        }
+      ],
+      "summary": "stadium: policy(priority=cost, V=1, W=20.00)  |  residential: policy(priority=cost, V=1, W=20.00)  |  business: policy(priority=cost, V=1, W=20.00)"
+    },
+    {
+      "t_wall": 40.2,
+      "intent": "Actually, the stadium has a sold-out concert finishing tonight. Spare no capacity there and treat the surge as legitimate demand, not an attack.",
+      "reasoning": "Clause 1, \"the stadium ...\" targets the stadium site only, so no other sites receive directives. Clause 2, \"sold-out concert finishing tonight,\" is an event/crowd cue, but it lacks a usable start time, so it is not schedulable; treat it as context for the site agent rather than a scheduled event. Clause 3, \"Spare no capacity there,\" maps to a QoS posture on the stadium. Clause 4, \"treat the surge as legitimate demand, not an attack,\" maps to a Non-RT delegation instruction that the egress burst is benign crowd traffic and should not be classified as malicious. No hard constraints clash, so no conflict.",
+      "conflict": null,
+      "misrouted": [],
+      "directives": [
+        {
+          "site_id": "stadium",
+          "priority": "qos",
+          "V": null,
+          "W": null,
+          "min_servers": null,
+          "schedule": null,
+          "nonrt": true
+        }
+      ],
+      "summary": "stadium: policy(priority=qos, V=20, W=1.00); delegated: \"Treat the concert egress surge as legitimate crowd demand, not a malicious attack. Do not infer a storm from the load spike alone.\""
+    },
+    {
+      "t_wall": 58.8,
+      "intent": "Keep at least 3 servers warm at the business district cell.",
+      "reasoning": "Intent targets only the business district cell. Clause \"Keep at least 3 servers warm\" is a hard SLA floor, so it maps to min_servers=3 for business. No posture change, event scheduling, or Non-RT instruction is requested, so priority stays balanced and all other levers remain null.",
+      "conflict": null,
+      "misrouted": [],
+      "directives": [
+        {
+          "site_id": "business",
+          "priority": "balanced",
+          "V": null,
+          "W": null,
+          "min_servers": 3,
+          "schedule": null,
+          "nonrt": false
+        }
+      ],
+      "summary": "business: policy(priority=balanced, V=1, W=1.00, min_servers=3)"
+    }
+  ],
+  "orchestrator": {
+    "slug": "openrouter:openai/gpt-5.4-mini",
+    "mode": "on",
+    "intents_routed": 3
+  }
+}
