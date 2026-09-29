@@ -132,8 +132,10 @@ def compose_system_prompt(
     return template
 
 # BUILD THE NON-RT AGENT
-def build_non_rt_agent(model, system_prompt: str | None = None) -> Agent:
-    toolset = MCPServerStreamableHTTP(MCP_URL)     # Create HTTP client pointing to the MCP Server HTTP client for the MCP read tools
+def build_non_rt_agent(model, system_prompt: str | None = None, mcp_url: str | None = None) -> Agent:
+    # mcp_url defaults to the single-site server (port 8000); the multi-site runner (Exp 8) passes each
+    # site's own per-port URL so the judge reads ITS site's tools, not the global host's.
+    toolset = MCPServerStreamableHTTP(mcp_url or MCP_URL)  # HTTP client pointing to the MCP read tools
     return Agent(
         model=model,                               # define the LLM to be used
         output_type=PolicyUpdate,                  # force structured output — the model MUST return a valid PolicyUpdate
@@ -238,10 +240,12 @@ async def _do_assessment(
     stats:      RunStats | None,  # LLM meter to fold this call into (tokens/latency/errors); None = skip bookkeeping
     window_s:   float = 40.0,         # how many seconds of telemetry the summary covers
     model_settings: dict | None = None,  # per-call LLM settings; None -> pinned default (timeout + temp=0)
+    host=None,                        # the SimHost this judge reads (None = global runtime.host; Exp 8 per-site)
 ) -> "PolicyUpdate | None":           # the verdict (None on error); loop callers ignore it
+    active = host or sim_host                         # per-site host (Exp 8) or the process-wide default
     t0     = time.monotonic()                        # start of the WHOLE assessment (for asmt-latency stat)
     # turn the raw telemetry into the trend summary the model reasons over (never raw samples)
-    window = summarize_window(sim_host.sim.telemetry, window_s=window_s) if sim_host.sim else "No sim running."
+    window = summarize_window(active.sim.telemetry, window_s=window_s) if active.sim else "No sim running."
 
     note = policy.get_operator_note()                # standing operator instruction, if the Orchestrator set one
     note_line = (f"\nOPERATOR INSTRUCTION (from the network operator, honour it): {note}\n"
@@ -269,8 +273,8 @@ async def _do_assessment(
         if stats:
             _accumulate_usage(stats, result, elapsed)
         # crowd -> reserve: the LLM reasons about the CROWD, the system sizes the floor (reserve_for).
-        mu  = sim_host.sim.mu_single if sim_host.sim else 28.7
-        cmx = sim_host.sim.cfg.c_max if sim_host.sim else 16
+        mu  = active.sim.mu_single if active.sim else 28.7
+        cmx = active.sim.cfg.c_max if active.sim else 16
         # Touch the event plan ONLY when the judge gives a real estimate. attendance=0 (e.g. while
         # it just lowers V after a storm) must NOT clear the reserve — otherwise adjusting V wipes
         # the committed plan. So when there's no estimate we send reserve/event_time = None (leave
@@ -298,8 +302,8 @@ async def _do_assessment(
         # Once the policy holds a committed reserve for a scheduled event, mark that event on the
         # calendar as provisioned so the next get_calendar tells the judge "do not re-estimate" — it
         # acts on each event ONCE. The event stays visible, so its surge is still judged benign.
-        if policy.event_time > 0.0 and policy.reserve_servers > 1 and sim_host.sim is not None:
-            sim_host.mark_event_committed(policy.event_time)
+        if policy.event_time > 0.0 and policy.reserve_servers > 1 and active.sim is not None:
+            active.mark_event_committed(policy.event_time)
         tuned = f"  tighten(V={verdict.lyapunov_V:.0f})" if verdict.tighten else ""
         # show the EFFECTIVE plan the policy actually HOLDS (after the lock), not the raw proposal,
         # so a re-estimate that the lock ignored is visible as "held" staying put.
@@ -315,7 +319,7 @@ async def _do_assessment(
         # its articulated reasoning, the raw decision, and the plan the policy actually HELD after
         # the lock. Lets us replay each LLM's thinking per assessment, not just the episode score.
         if stats is not None:
-            t_now = sim_host.sim.telemetry[-1].t if (sim_host.sim and sim_host.sim.telemetry) else 0.0
+            t_now = active.sim.telemetry[-1].t if (active.sim and active.sim.telemetry) else 0.0
             stats.traces.append({
                 "assessment":          assessment,
                 "t":                   round(t_now, 1),         # sim time of this decision
@@ -360,6 +364,7 @@ async def run_assessment_loop(
     stats:      RunStats | None = None, # if i will save the run stats for logging
     window_s:   float = 40.0, # how much telemtry each assessment sees.
     model_settings: dict | None = None,  # per-call LLM settings forwarded to each assessment (None -> pinned default)
+    host=None,  # the SimHost this judge reads (None = global runtime.host; Exp 8 passes per-site)
 ) -> None:
     """
     Autonomous Non-RT assessment loop. Sleeps `interval` between assessments,
@@ -382,11 +387,11 @@ async def run_assessment_loop(
         if stats:
             stats.non_rt_assessments += 1
         await _do_assessment(agent, policy, assessment, stats, window_s=window_s,
-                             model_settings=model_settings)
+                             model_settings=model_settings, host=host)
 
     # Always run ONE final assessment after the episode ends (captures the recovery state)
     assessment += 1
     if stats:
         stats.non_rt_assessments += 1
     print(f"[Non-RT]  Episode complete — running final assessment #{assessment}.")
-    await _do_assessment(agent, policy, assessment, stats, window_s=window_s)
+    await _do_assessment(agent, policy, assessment, stats, window_s=window_s, host=host)

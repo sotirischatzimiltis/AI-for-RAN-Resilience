@@ -71,6 +71,7 @@ async def run_control_loop(
     poll_interval: float = 1.0, # the loop's tick period (s)
     stats:         RunStats | None = None, # per-episode counters (None = no counting)
     memory=None, # optional StormMemory for learned auto-engage (None = no learning, no auto-engage)
+    host=None,   # the SimHost this loop actuates (None = the global runtime.host; Exp 8 passes per-site)
 ) -> None:
     """
     Deterministic 1 Hz control loop
@@ -86,6 +87,7 @@ async def run_control_loop(
     `memory` (StormMemory | None): when present, the loop learns the storm
     signature and may auto-engage the filter ahead of the LLM verdict.
     """
+    active_host = host or sim_host           # per-site host (Exp 8) or the process-wide default
     step = 0
     while not stop_event.is_set():           # run until the episode-done event is set
         tick_start = time.monotonic()        # mark tick start so we sleep only the REMAINDER (fixed-rate)
@@ -93,7 +95,7 @@ async def run_control_loop(
         if stats:
             stats.near_rt_steps += 1         # count ticks for the episode summary
 
-        sim = sim_host.sim                   # the live episode (owned by SimHost, shared in-process)
+        sim = active_host.sim                # the live episode (owned by SimHost, shared in-process)
         if sim is not None and sim.telemetry:  # skip until the sim exists and has produced a sample
             s      = sim.telemetry[-1]       # latest telemetry snapshot
             pol    = policy.snapshot()       # atomic read of the judge's current policy

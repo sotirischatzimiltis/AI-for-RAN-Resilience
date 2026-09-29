@@ -112,6 +112,8 @@ class SimHost:
             # benign single-surge with a RAMP onset — the twin of single_storm (STEP); Exp 4
             # sweeps both to isolate load-shape x V/W x provisioning delay (no botnet, filter off).
             kw               = {"t_post": t_post} if t_post is not None else {}
+            if storm is not None:            # `storm` overrides the ramp PEAK (Exp 8 sizes benign surges)
+                kw["peak"] = storm
             traffic          = single_ramp_traffic(**kw)
             self.t0, self.td = 50.0, 110.0
         elif scenario == "event_heavy":
